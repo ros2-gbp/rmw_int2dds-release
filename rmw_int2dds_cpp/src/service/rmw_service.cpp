@@ -99,15 +99,8 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
-// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
-// Enumerators are invisible to __has_include, so probe a header instead:
-// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
-// NOT the same release the enumerator went in - it is still present at 7.8.2
-// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
-// probe is exact everywhere this package builds:
-//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
-//   lyrical 7.10.1             -> header present, enumerator absent
-// Revisit if this ever has to build against rmw 7.9.x.
+// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy; detect via a header
+// introduced in the same release (enum values are invisible to __has_include).
 #if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -381,9 +374,7 @@ rmw_create_service(
   Int2DdsDataReaderQos * reader_qos = nullptr;
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    reader_qos,
-    rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
-    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+    reader_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
   set_reader_reliability_durability(reader_qos, srv_data->qos);
   set_reader_deadline_liveliness(reader_qos, srv_data->qos);
   set_reader_history(reader_qos, srv_data->qos);
@@ -410,9 +401,7 @@ rmw_create_service(
   Int2DdsDataWriterQos * writer_qos = nullptr;
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    writer_qos,
-    rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
-    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
+    writer_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
   set_writer_reliability_durability(writer_qos, srv_data->qos);
   set_writer_deadline_lifespan_liveliness(writer_qos, srv_data->qos);
   set_writer_history(writer_qos, srv_data->qos);
@@ -491,12 +480,10 @@ rmw_create_service(
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_reader_gid, request_topic_name, request_type_name,
-      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true,
-      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true);
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_writer_gid, response_topic_name, response_type_name,
-      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false,
-      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false);
     context_data->common->add_service_graph(
       request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
   }
@@ -626,27 +613,17 @@ rmw_service_server_is_available(
   const rmw_client_t * client,
   bool * is_available)
 {
-// The conformance suite's expectation for null arguments here changed across
-// distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
-// The probe is rmw/get_service_endpoint_info.h (rmw 7.9.1), used here only as a
-// "Lyrical or newer" marker - the suite's expectation is not tied to that
-// header's release, and no distro ships an rmw between 7.8.2 and 7.10.1.
-#if __has_include("rmw/get_service_endpoint_info.h")
-  constexpr rmw_ret_t null_argument_ret = RMW_RET_INVALID_ARGUMENT;
-#else
-  constexpr rmw_ret_t null_argument_ret = RMW_RET_ERROR;
-#endif
   if (node == nullptr) {
     RMW_SET_ERROR_MSG("node argument is null");
-    return null_argument_ret;
+    return RMW_RET_ERROR;
   }
   if (client == nullptr) {
     RMW_SET_ERROR_MSG("client argument is null");
-    return null_argument_ret;
+    return RMW_RET_ERROR;
   }
   if (is_available == nullptr) {
     RMW_SET_ERROR_MSG("is_available argument is null");
-    return null_argument_ret;
+    return RMW_RET_ERROR;
   }
 
   if (node->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
