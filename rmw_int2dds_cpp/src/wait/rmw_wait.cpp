@@ -22,12 +22,14 @@
 #include "rmw/rmw.h"
 #include "rmw/error_handling.h"
 
-#if __has_include("rmw/events_statuses/incompatible_type.h")
-#define RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT 1
-#include "rmw/events_statuses/incompatible_type.h"
+// ROS 2 Iron and newer (e.g. Jazzy) expose matched events; stock Humble does not
+// define the RMW_EVENT_*_MATCHED enum values nor rmw/events_statuses/matched.h.
+// Feature-detect so a single source builds on both distros.
+#if __has_include("rmw/events_statuses/matched.h")
+#define RMW_INT2DDS_HAS_MATCHED_EVENT 1
 #endif
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "waitset_registry.hpp"  // NOLINT(build/include_subdir)
@@ -89,7 +91,8 @@ record_wait_profile(
     const double divisor = static_cast<double>(n);
     std::fprintf(
       stderr,
-      "RMW_INT2DDS_WAIT_PROFILE count=%lu ok=%lu timeout=%lu total_avg_us=%.3f attach_avg_us=%.3f wait_avg_us=%.3f detach_avg_us=%.3f ready_avg_us=%.3f\n",
+      "RMW_INT2DDS_WAIT_PROFILE count=%lu ok=%lu timeout=%lu total_avg_us=%.3f "
+      "attach_avg_us=%.3f wait_avg_us=%.3f detach_avg_us=%.3f ready_avg_us=%.3f\n",
       n,
       g_wait_profile.ok_count.load(std::memory_order_relaxed),
       g_wait_profile.timeout_count.load(std::memory_order_relaxed),
@@ -111,11 +114,9 @@ event_type_to_status_mask(rmw_event_type_t event_type)
       return INT2DDS_STATUS_OFFERED_DEADLINE_MISSED;
     case RMW_EVENT_OFFERED_QOS_INCOMPATIBLE:
       return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_QOS;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE:
       return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_TYPE;
-#endif
-#ifdef RMW_EVENT_PUBLICATION_MATCHED
+#ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_PUBLICATION_MATCHED:
       return INT2DDS_STATUS_PUBLICATION_MATCHED;
 #endif
@@ -125,13 +126,11 @@ event_type_to_status_mask(rmw_event_type_t event_type)
       return INT2DDS_STATUS_REQUESTED_DEADLINE_MISSED;
     case RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE:
       return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_QOS;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE:
       return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_TYPE;
-#endif
     case RMW_EVENT_MESSAGE_LOST:
       return INT2DDS_STATUS_SAMPLE_LOST;
-#ifdef RMW_EVENT_SUBSCRIPTION_MATCHED
+#ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_SUBSCRIPTION_MATCHED:
       return INT2DDS_STATUS_SUBSCRIPTION_MATCHED;
 #endif
@@ -375,6 +374,14 @@ refresh_event_status_condition(rmw_int2dds_cpp::EventData * event_data)
     return nullptr;
   }
 
+  // Unlike ensure_status_condition_mask above, this does not reset the mask to 0
+  // after creating the handle, and does not need to. A fresh int2DDS
+  // StatusCondition does come back with every status enabled (0x7FFF), which
+  // would make the early return below latch a wide-open mask - but the mask is a
+  // property of the DDS entity, not of the handle, and rmw_{publisher,
+  // subscription}_event_init narrows the entity before any event that reaches
+  // here can exist. test_event_validation's recreated-mask check pins that.
+
   uint32_t enabled_mask = 0;
   if (
     int2dds_statuscondition_get_enabled_statuses(status_condition, &enabled_mask) != INT2DDS_RET_OK)
@@ -600,6 +607,8 @@ stamp_desired_attachments(
   ws_data->cached_services.clear();
   ws_data->cached_clients.clear();
   ws_data->cached_events.clear();
+  // This pass supersedes whatever raised the flag last time.
+  ws_data->force_rebuild = false;
 
   bool all_attached = true;
 
@@ -728,13 +737,18 @@ stamp_desired_attachments(
   }
 
   if (!all_attached) {
-    // An attach failed. Drop the cache so the next call rebuilds and retries,
-    // restoring the pre-cache behavior of attaching afresh on every call.
-    ws_data->cached_subscriptions.clear();
-    ws_data->cached_guard_conditions.clear();
-    ws_data->cached_services.clear();
-    ws_data->cached_clients.clear();
-    ws_data->cached_events.clear();
+    // An attach failed. Ask the next call to rebuild and retry, restoring the
+    // pre-cache behavior of attaching afresh on every call.
+    //
+    // This used to be expressed by emptying the cached_* lists. That reads as
+    // "nothing is attached", which is false - whatever succeeded in this pass
+    // is still attached - and it is indistinguishable from a caller that asked
+    // for nothing. require_reattach(empty, 0, nullptr) is false, so the next
+    // call passing no entities at all skipped both the rebuild and
+    // detach_stale_attachments, and the successful attachments from this pass
+    // stayed attached for good. The caches now keep mirroring what was asked
+    // for, and the retry is a flag of its own.
+    ws_data->force_rebuild = true;
   }
 }
 
@@ -831,6 +845,7 @@ rmw_wait(
       // Otherwise the conditions attached last time are still in place.
       const auto attach_t0 = std::chrono::steady_clock::now();
       if (
+        ws_data->force_rebuild ||
         require_reattach(
           ws_data->cached_subscriptions,
           subscriptions != nullptr ? subscriptions->subscriber_count : 0,
@@ -1013,5 +1028,4 @@ rmw_wait(
 
   return RMW_RET_OK;
 }
-
 }  // extern "C"

@@ -12,28 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <tuple>
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include "rmw/rmw.h"
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
 #include "rmw/validate_namespace.h"
 #include "rmw/validate_node_name.h"
 
-#include <algorithm>
-#include <chrono>
-#include <cstring>
-#include <cstdio>
-#include <mutex>
-#include <string>
-#include <thread>
-#include <vector>
-
+#include "../graph/discovery.hpp"
+#include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
-#include "../graph/discovery.hpp"
 #include "../graph/graph_guard.hpp"
 
 // Forward declarations from gid.cpp
@@ -85,7 +87,8 @@ is_hidden_builtin_service(
 }
 
 void
-detach_service_entities(rmw_int2dds_cpp::ServiceData * service_data)
+detach_service_entities(
+  rmw_int2dds_cpp::ServiceData * service_data)
 {
   if (service_data == nullptr || service_data->detached) {
     return;
@@ -113,7 +116,8 @@ detach_service_entities(rmw_int2dds_cpp::ServiceData * service_data)
 }
 
 void
-detach_client_entities(rmw_int2dds_cpp::ClientData * client_data)
+detach_client_entities(
+  rmw_int2dds_cpp::ClientData * client_data)
 {
   if (client_data == nullptr || client_data->detached) {
     return;
@@ -225,7 +229,6 @@ detach_remaining_clients(rmw_int2dds_cpp::NodeData * node_data)
 
 extern "C"
 {
-
 rmw_node_t *
 rmw_create_node(
   rmw_context_t * context,
@@ -338,7 +341,9 @@ rmw_create_node(
   rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
 
   // Standard node-graph discovery: announce this node via ros_discovery_info.
-  (void)rmw_int2dds_cpp::announce_node(context_data, name, namespace_);
+  if (context_data->common) {
+    context_data->common->add_node_graph(name, namespace_);
+  }
 
   return node;
 }
@@ -401,10 +406,11 @@ rmw_destroy_node(rmw_node_t * node)
   // teardown remains compatible with that contract.
   detach_remaining_clients(node_data);
 
-  // Entities may still be tracked here when a caller's rmw_destroy_<entity>
-  // failed and never removed itself from the node. Per the rmw contract, node
-  // destruction must not be blocked by that: proceed and let the orphaned
-  // entities remain the caller's responsibility.
+  // Entities may still be tracked here when a caller's rmw_destroy_<entity> failed
+  // (e.g. mocked to return an error) and so never removed itself from the node.
+  // Per the rmw contract, node destruction must not be blocked by that: like the
+  // other DDS RMWs, proceed and let the orphaned entities be the caller's
+  // responsibility rather than returning an error from rmw_destroy_node.
 
   // Notify graph-change waiters that this node was removed.
   if (node_data->context_data != nullptr) {
@@ -412,18 +418,46 @@ rmw_destroy_node(rmw_node_t * node)
   }
 
   // Standard node-graph discovery: withdraw this node from ros_discovery_info.
-  if (node_data->context_data != nullptr) {
-    (void)rmw_int2dds_cpp::withdraw_node(
-      node_data->context_data,
-      node_data->name,
-      node_data->namespace_);
+  if (node_data->context_data != nullptr && node_data->context_data->common) {
+    node_data->context_data->common->remove_node_graph(node_data->name, node_data->namespace_);
   }
 
   if (node_data->graph_guard_condition != nullptr) {
-    const rmw_ret_t destroy_ret =
-      rmw_destroy_guard_condition(node_data->graph_guard_condition);
-    (void)destroy_ret;
+    std::ignore = rmw_destroy_guard_condition(node_data->graph_guard_condition);
     node_data->graph_guard_condition = nullptr;
+  }
+
+  // Delete this node's publisher DataWriters now to free their history caches.
+  // rclpy defers publisher teardown from Lyrical on (Node.destroy_node ->
+  // handle.destroy_when_not_in_use), so rmw_destroy_publisher may not run before
+  // the node/participant is gone, orphaning each cycle's DataWriter cache. The
+  // datawriter and its status condition are nulled so a later
+  // rmw_destroy_publisher skips both.
+  //
+  // Order and locking follow rmw_destroy_publisher exactly. clean_caches has to
+  // run first because a wait set keys its attachments on the status condition
+  // handle (WaitSetData::attached_conditions), so the handles cannot die while
+  // an attachment still names them. It runs outside entities_mutex because it
+  // takes the registry lock and then each wait set's lock; no path in this
+  // package takes those while holding entities_mutex, and this one must not
+  // become the first.
+  rmw_int2dds_cpp::waitset_registry_clean_caches();
+  {
+    std::lock_guard<std::mutex> lock(node_data->entities_mutex);
+    for (auto * pd : node_data->live_publishers) {
+      if (pd == nullptr) {
+        continue;
+      }
+      if (pd->status_condition != nullptr) {
+        int2dds_statuscondition_delete(pd->status_condition);
+        pd->status_condition = nullptr;
+      }
+      if (pd->datawriter != nullptr) {
+        int2dds_delete_datawriter(pd->datawriter);
+        pd->datawriter = nullptr;
+      }
+    }
+    node_data->live_publishers.clear();
   }
 
   // Decrement context reference count. Release the DDS resources once the last
@@ -508,5 +542,4 @@ rmw_node_get_graph_guard_condition(const rmw_node_t * node)
   (void)int2dds_guardcondition_set_trigger_value(gc_data->guard_condition, true);
   return node_data->graph_guard_condition;
 }
-
 }  // extern "C"

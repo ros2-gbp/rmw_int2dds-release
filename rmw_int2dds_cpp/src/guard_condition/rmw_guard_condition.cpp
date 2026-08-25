@@ -16,14 +16,13 @@
 #include "rmw/allocators.h"
 #include "rmw/error_handling.h"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 
 extern "C"
 {
-
 rmw_guard_condition_t *
 rmw_create_guard_condition(rmw_context_t * context)
 {
@@ -114,5 +113,4 @@ rmw_trigger_guard_condition(const rmw_guard_condition_t * guard_condition)
 
   return RMW_RET_OK;
 }
-
 }  // extern "C"

@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.14)
 project(rmw_int2dds_cpp)
 
-# C++17 standard
-set(CMAKE_CXX_STANDARD 17)
+# C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(
@@ -27,6 +27,10 @@ find_package(rosidl_typesupport_introspection_c REQUIRED)
 find_package(rosidl_typesupport_introspection_cpp REQUIRED)
 find_package(rosidl_typesupport_c REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
+# Dynamic message type support. Present from Iron on, so REQUIRED here: it used
+# to be probed QUIET and undeclared, which let a build-farm job drop it without a
+# word and ship a .deb with no dynamic message support at all.
+find_package(rosidl_dynamic_typesupport REQUIRED)
 find_package(rmw_dds_common REQUIRED)
 find_package(std_msgs REQUIRED)
 
@@ -47,14 +51,17 @@ find_package(std_msgs REQUIRED)
 # - the same question test_event_validation.cpp asks with __has_include.
 #
 # It must NOT be inferred from $ENV{ROS_DISTRO}: ros_environment is the only
-# package that exports that variable, and the ROS build farm never installs it
-# (the devel job builds in a bare ubuntu image carrying only the declared rosdep
-# keys), so it is empty there and a distro comparison silently picks the wrong
-# branch. ros:humble-ros-base does set it, which is why guessing from the distro
-# worked in GitHub Actions and broke only on the farm.
+# package that exports that variable, so anywhere it is not installed the
+# variable is empty and a distro comparison silently picks whichever branch that
+# happens to select. The rmw headers are the thing the code actually depends on,
+# so probe those instead.
+#
+# NO_DEFAULT_PATH keeps the search inside the rmw package that was just found; a
+# stray matched.h reachable through CMAKE_PREFIX_PATH must not answer for it.
 find_file(RMW_INT2DDS_MATCHED_EVENT_HEADER
   NAMES rmw/events_statuses/matched.h
-  HINTS ${rmw_INCLUDE_DIRS})
+  HINTS ${rmw_INCLUDE_DIRS}
+  NO_DEFAULT_PATH)
 mark_as_advanced(RMW_INT2DDS_MATCHED_EVENT_HEADER)
 if(RMW_INT2DDS_MATCHED_EVENT_HEADER)
   set(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS_DEFAULT ON)
@@ -136,6 +143,7 @@ add_library(rmw_int2dds_cpp SHARED
 
   # Serialization
   src/serialization/rmw_serialize.cpp
+  src/serialization/dynamic_serialization_support.cpp
   src/serialization/cdr_serializer.cpp
 
   # Common utilities
@@ -153,21 +161,22 @@ target_include_directories(rmw_int2dds_cpp PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(rmw_int2dds_cpp
+# ament_target_dependencies() was removed from ament_cmake in ROS 2 Lyrical
+# (ament_cmake 2.8.x no longer defines it), so link the namespaced targets
+# directly - they carry their own include directories and transitive deps.
+target_link_libraries(rmw_int2dds_cpp PUBLIC
   int2dds_ffi::int2dds_ffi
+  rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
   ${PLATFORM_LIBS}
-)
-
-ament_target_dependencies(rmw_int2dds_cpp
-  rcutils
-  rmw
-  rosidl_runtime_c
-  rosidl_runtime_cpp
-  rosidl_typesupport_introspection_c
-  rosidl_typesupport_introspection_cpp
-  rosidl_typesupport_c
-  rosidl_typesupport_cpp
-  rmw_dds_common
+  rcutils::rcutils
+  rmw::rmw
+  rosidl_runtime_c::rosidl_runtime_c
+  rosidl_runtime_cpp::rosidl_runtime_cpp
+  rosidl_typesupport_introspection_c::rosidl_typesupport_introspection_c
+  rosidl_typesupport_introspection_cpp::rosidl_typesupport_introspection_cpp
+  rosidl_typesupport_c::rosidl_typesupport_c
+  rosidl_typesupport_cpp::rosidl_typesupport_cpp
+  rmw_dds_common::rmw_dds_common_library
 )
 
 # Configure as RMW library
@@ -192,28 +201,32 @@ target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
-  ament_target_dependencies(test_event_smoke
-    rcutils
-    rmw
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_smoke
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   # test_event_validation.cpp drives the rmw C API directly - it includes no
   # rclcpp header, so rclcpp was never a real dependency of this target.
-  ament_target_dependencies(test_event_validation
-    rcutils
-    rmw
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_validation
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
@@ -340,8 +353,9 @@ if(BUILD_TESTING)
       rmw_int2dds_cpp
       int2dds_ffi::int2dds_ffi
       ${PLATFORM_LIBS}
+      rmw::rmw
+      rcutils::rcutils
     )
-    ament_target_dependencies(test_rmw_wait_guards rmw rcutils)
     if(WIN32)
       add_custom_command(TARGET test_rmw_wait_guards POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -349,6 +363,39 @@ if(BUILD_TESTING)
         COMMENT "Copying int2dds_ffi.dll for test_rmw_wait_guards")
     endif()
   endif()
+
+  # The remaining checks under test/ are plain executables rather than gtest
+  # binaries: each drives the rmw C API (or the FFI directly) and reports through
+  # its exit status. Registering them is what gives `colcon test` something to
+  # run beyond the linters and test_rmw_wait_guards.
+  #
+  # GENERATE_RESULT_FOR_RETURN_CODE_ZERO: these write no JUnit XML of their own,
+  # so ament has to synthesise the passing result from the exit status.
+  #
+  # ROS_DOMAIN_ID does not actually separate them - nothing under src/ reads the
+  # variable, test_connection hardcodes domain 0 and the raw rmw_init path folds
+  # RMW_DEFAULT_DOMAIN_ID to 0 - so do not read it as isolation. It is set for
+  # the day those paths honour it. 71 belongs to test_rmw_wait_guards above and
+  # 81..84 to rmw_int2dds_validation.
+  find_package(ament_cmake_test REQUIRED)
+
+  function(rmw_int2dds_add_check name domain_id timeout)
+    # test_event_smoke is built only when the matched-event API is present.
+    if(NOT TARGET ${name})
+      message(WARNING "rmw_int2dds_cpp: ${name} not built; skipping test registration")
+      return()
+    endif()
+    ament_add_test(${name}
+      COMMAND "$<TARGET_FILE:${name}>"
+      TIMEOUT ${timeout}
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+      ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=${domain_id}
+    )
+  endfunction()
+
+  rmw_int2dds_add_check(test_connection        72 60)
+  rmw_int2dds_add_check(test_event_validation  73 180)
+  rmw_int2dds_add_check(test_event_smoke       74 120)
 endif()
 
 # ============================================================================
@@ -361,6 +408,10 @@ ament_export_dependencies(
   int2dds_ffi_vendor
   rcutils
   rmw
+  # Linked PUBLIC into the exported target above, so a consumer of
+  # rmw_int2dds_cpp::rmw_int2dds_cpp needs it resolved. It happens to arrive
+  # transitively through rmw today; do not rely on that.
+  rosidl_dynamic_typesupport
   rosidl_runtime_c
   rosidl_runtime_cpp
   rosidl_typesupport_introspection_c

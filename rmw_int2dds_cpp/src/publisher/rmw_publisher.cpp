@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cinttypes>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -34,7 +35,10 @@
 #include "rosidl_typesupport_introspection_cpp/field_types.hpp"
 #include "rosidl_typesupport_introspection_cpp/message_introspection.hpp"
 
-#include "int2dds-ffi.h"
+#include "rmw/get_topic_endpoint_info.h"
+#include "rmw_dds_common/qos.hpp"
+
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
@@ -42,7 +46,6 @@
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
 #include "../common/type_hash_qos.hpp"
-
 // Forward declarations from common utilities
 namespace rmw_int2dds_cpp
 {
@@ -85,7 +88,8 @@ is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
   {
     return false;
   }
-#ifdef RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE
+// best-available marker; the *_LIVELINESS_* form is an enum, so #ifdef on it is always false
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
   if (liveliness == RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE) {
     return false;
   }
@@ -93,16 +97,26 @@ is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
   return true;
 }
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
 int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
+#if !__has_include("rmw/get_service_endpoint_info.h")
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
+#pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -110,9 +124,6 @@ liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
       return INT2DDS_QOS_LIVELINESS_AUTOMATIC;
   }
 }
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 int64_t
 duration_to_ns(const rmw_time_t & duration)
@@ -260,7 +271,8 @@ build_type_info_from_introspection(
       rosidl_typesupport_introspection_c__identifier) == 0)
   {
     auto * members =
-      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(introspection_ts->data);
+      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(
+      introspection_ts->data);
     if (members == nullptr) {
       cleanup();
       return false;
@@ -362,7 +374,6 @@ convert_wait_timeout_to_ms(const rmw_time_t & wait_timeout)
 
 extern "C"
 {
-
 rmw_publisher_t *
 rmw_create_publisher(
   const rmw_node_t * node,
@@ -409,7 +420,17 @@ rmw_create_publisher(
     return nullptr;
   }
 
-  const rmw_qos_profile_t actual_qos = resolve_system_default_qos(*qos_policies);
+  // Resolve any BEST_AVAILABLE policies against existing subscriptions on this
+  // topic (Jazzy feature). No-op when no policy is set to best-available.
+  rmw_qos_profile_t adapted_qos = *qos_policies;
+  rmw_ret_t best_available_ret =
+    rmw_dds_common::qos_profile_get_best_available_for_topic_publisher(
+    node, topic_name, &adapted_qos, rmw_get_subscriptions_info_by_topic);
+  if (best_available_ret != RMW_RET_OK) {
+    return nullptr;
+  }
+
+  const rmw_qos_profile_t actual_qos = resolve_system_default_qos(adapted_qos);
 
   auto * node_data = static_cast<rmw_int2dds_cpp::NodeData *>(node->data);
   if (node_data == nullptr || node_data->context_data == nullptr) {
@@ -459,16 +480,16 @@ rmw_create_publisher(
     RCUTILS_LOG_INFO_NAMED(
       "rmw_int2dds_cpp",
       "create_publisher topic=%s reliability=%d durability=%d history=%d depth=%zu "
-      "deadline_ns=%lld lifespan_ns=%lld liveliness=%d lease_ns=%lld",
+      "deadline_ns=%" PRId64 " lifespan_ns=%" PRId64 " liveliness=%d lease_ns=%" PRId64 "",
       topic_name,
       static_cast<int>(actual_qos.reliability),
       static_cast<int>(actual_qos.durability),
       static_cast<int>(actual_qos.history),
       actual_qos.depth,
-      static_cast<long long>(duration_to_ns(actual_qos.deadline)),
-      static_cast<long long>(duration_to_ns(actual_qos.lifespan)),
+      duration_to_ns(actual_qos.deadline),
+      duration_to_ns(actual_qos.lifespan),
       static_cast<int>(actual_qos.liveliness),
-      static_cast<long long>(duration_to_ns(actual_qos.liveliness_lease_duration)));
+      duration_to_ns(actual_qos.liveliness_lease_duration));
   }
 
   // Convert ROS topic name to DDS topic name
@@ -568,10 +589,13 @@ rmw_create_publisher(
     return nullptr;
   }
 
+  // Adopt the real DDS endpoint GUID as the rmw gid so it matches what remote
+  // participants discover over SEDP and what this participant advertises via
+  // ros_discovery_info; this lets the standard graph cache correlate the two.
   {
     uint8_t endpoint_guid[16];
     if (int2dds_datawriter_get_guid(pub_data->datawriter, &endpoint_guid) == INT2DDS_RET_OK) {
-      std::memcpy(pub_data->gid.data, endpoint_guid, sizeof(endpoint_guid));
+      std::memcpy(pub_data->gid.data, endpoint_guid, RMW_GID_STORAGE_SIZE);
     }
   }
 
@@ -604,6 +628,7 @@ rmw_create_publisher(
   {
     std::lock_guard<std::mutex> lock(node_data->entities_mutex);
     node_data->publishers.push_back(pub_data->gid);
+    node_data->live_publishers.push_back(pub_data);
   }
 
   // Listener starts with an empty mask; refreshed when user callbacks register
@@ -612,12 +637,21 @@ rmw_create_publisher(
   // Notify graph-change waiters that this publisher was added.
   rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
 
+  // Standard rmw_dds_common graph: register the writer's entity (topic/type) and
+  // associate it with the owning node, then announce via ros_discovery_info.
   if (context_data->common) {
+    rosidl_type_hash_t type_hash{};
+    if (type_support->get_type_hash_func != nullptr) {
+      const rosidl_type_hash_t * h = type_support->get_type_hash_func(type_support);
+      if (h != nullptr) {
+        type_hash = *h;
+      }
+    }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, pub_data->gid, dds_topic_name, pub_data->type_name,
-      pub_data->qos, /*is_reader=*/ false);
-    rmw_int2dds_cpp::common_associate_local_writer(
-      context_data, pub_data->gid, node_data->name, node_data->namespace_);
+      type_hash, pub_data->qos, /*is_reader=*/false);
+    context_data->common->add_publisher_graph(
+      pub_data->gid, node_data->name, node_data->namespace_);
   }
 
   return publisher;
@@ -659,17 +693,25 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
         break;
       }
     }
+    auto & lpubs = node_data->live_publishers;
+    for (auto it = lpubs.begin(); it != lpubs.end(); ++it) {
+      if (*it == pub_data) {
+        lpubs.erase(it);
+        break;
+      }
+    }
   }
 
+  // Notify graph-change waiters that this publisher was removed.
   if (context_data != nullptr) {
     rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
   }
 
+  // Standard rmw_dds_common graph: withdraw the writer entity + node association.
   if (context_data != nullptr && context_data->common) {
-    rmw_int2dds_cpp::common_dissociate_local_writer(
-      context_data, pub_data->gid, node_data->name, node_data->namespace_);
-    rmw_int2dds_cpp::common_remove_local_entity(
-      context_data, pub_data->gid, /*is_reader=*/ false);
+    rmw_int2dds_cpp::common_remove_local_entity(context_data, pub_data->gid, /*is_reader=*/false);
+    context_data->common->remove_publisher_graph(
+      pub_data->gid, node_data->name, node_data->namespace_);
   }
 
   // Delete DDS entities
@@ -753,7 +795,7 @@ rmw_publisher_get_actual_qos(
 
   *qos = pub_data->qos;
   // Report concrete values for system-default/unknown policies (actual QoS), on a
-  // copy only -- do not mutate the stored QoS, which other paths rely on.
+  // copy only — do not mutate the stored QoS, which other paths rely on.
   rmw_int2dds_cpp::resolve_actual_qos(qos);
   return RMW_RET_OK;
 }
@@ -888,5 +930,4 @@ rmw_publisher_get_network_flow_endpoints(
   RMW_SET_ERROR_MSG("rmw_publisher_get_network_flow_endpoints is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
-
 }  // extern "C"

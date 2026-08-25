@@ -28,7 +28,7 @@
 #include "rosidl_typesupport_introspection_c/identifier.h"
 #include "rosidl_typesupport_introspection_cpp/identifier.hpp"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
@@ -36,7 +36,6 @@
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
 #include "../common/type_hash_qos.hpp"
-
 // Forward declarations from common utilities
 namespace rmw_int2dds_cpp
 {
@@ -100,8 +99,15 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
-// ROS 2 Lyrical removed the deprecated MANUAL_BY_NODE policy; detect via a header
-// introduced in the same release (enum values are invisible to __has_include).
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
 #if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -257,7 +263,6 @@ set_reader_reliability_durability(
 
 extern "C"
 {
-
 rmw_service_t *
 rmw_create_service(
   const rmw_node_t * node,
@@ -376,7 +381,9 @@ rmw_create_service(
   Int2DdsDataReaderQos * reader_qos = nullptr;
   int2dds_datareader_qos_create_default(&reader_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    reader_qos, rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts));
+    reader_qos,
+    rmw_int2dds_cpp::encode_service_request_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   set_reader_reliability_durability(reader_qos, srv_data->qos);
   set_reader_deadline_liveliness(reader_qos, srv_data->qos);
   set_reader_history(reader_qos, srv_data->qos);
@@ -403,7 +410,9 @@ rmw_create_service(
   Int2DdsDataWriterQos * writer_qos = nullptr;
   int2dds_datawriter_qos_create_default(&writer_qos);
   rmw_int2dds_cpp::apply_type_hash_user_data(
-    writer_qos, rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts));
+    writer_qos,
+    rmw_int2dds_cpp::encode_service_response_type_hash_user_data(introspection_ts) +
+    rmw_int2dds_cpp::encode_service_type_hash_user_data(introspection_ts));
   set_writer_reliability_durability(writer_qos, srv_data->qos);
   set_writer_deadline_lifespan_liveliness(writer_qos, srv_data->qos);
   set_writer_history(writer_qos, srv_data->qos);
@@ -463,28 +472,33 @@ rmw_create_service(
 
   // Listener starts with an empty mask; refreshed when user callbacks register
   rmw_int2dds_cpp::refresh_service_listener(srv_data);
+
+  // Notify graph-change waiters that this service was added.
   rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
 
+  // Standard rmw_dds_common graph: a service is a request reader + a response
+  // writer. Register both entities (keyed by their DDS GUIDs) and associate them
+  // with the node via add_service_graph, which announces over ros_discovery_info.
   if (context_data->common) {
     rmw_gid_t request_reader_gid{};
     rmw_gid_t response_writer_gid{};
     uint8_t guid[16];
     if (int2dds_datareader_get_guid(srv_data->request_reader, &guid) == INT2DDS_RET_OK) {
-      std::memcpy(request_reader_gid.data, guid, sizeof(guid));
+      std::memcpy(request_reader_gid.data, guid, RMW_GID_STORAGE_SIZE);
     }
     if (int2dds_datawriter_get_guid(srv_data->response_writer, &guid) == INT2DDS_RET_OK) {
-      std::memcpy(response_writer_gid.data, guid, sizeof(guid));
+      std::memcpy(response_writer_gid.data, guid, RMW_GID_STORAGE_SIZE);
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_reader_gid, request_topic_name, request_type_name,
-      srv_data->qos, /*is_reader=*/ true);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_writer_gid, response_topic_name, response_type_name,
-      srv_data->qos, /*is_reader=*/ false);
-    rmw_int2dds_cpp::common_associate_local_reader(
-      context_data, request_reader_gid, node_data->name, node_data->namespace_);
-    rmw_int2dds_cpp::common_associate_local_writer(
-      context_data, response_writer_gid, node_data->name, node_data->namespace_);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false,
+      rmw_int2dds_cpp::get_service_type_hash(introspection_ts));
+    context_data->common->add_service_graph(
+      request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
   }
 
   return service;
@@ -538,28 +552,29 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
         live_services.end());
     }
 
+    // Notify graph-change waiters that this service was removed.
     if (node_data->context_data != nullptr) {
       rmw_int2dds_cpp::trigger_graph_guard_condition(node_data->context_data);
     }
 
+    // Standard rmw_dds_common graph: withdraw the request-reader + response-writer
+    // entities and the node association (endpoints are still alive here).
     if (node_data->context_data != nullptr && node_data->context_data->common) {
       rmw_gid_t request_reader_gid{};
       rmw_gid_t response_writer_gid{};
       uint8_t guid[16];
       if (int2dds_datareader_get_guid(srv_data->request_reader, &guid) == INT2DDS_RET_OK) {
-        std::memcpy(request_reader_gid.data, guid, sizeof(guid));
+        std::memcpy(request_reader_gid.data, guid, RMW_GID_STORAGE_SIZE);
       }
       if (int2dds_datawriter_get_guid(srv_data->response_writer, &guid) == INT2DDS_RET_OK) {
-        std::memcpy(response_writer_gid.data, guid, sizeof(guid));
+        std::memcpy(response_writer_gid.data, guid, RMW_GID_STORAGE_SIZE);
       }
-      rmw_int2dds_cpp::common_dissociate_local_reader(
-        node_data->context_data, request_reader_gid, node_data->name, node_data->namespace_);
-      rmw_int2dds_cpp::common_dissociate_local_writer(
-        node_data->context_data, response_writer_gid, node_data->name, node_data->namespace_);
+      node_data->context_data->common->remove_service_graph(
+        request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
       rmw_int2dds_cpp::common_remove_local_entity(
-        node_data->context_data, request_reader_gid, /*is_reader=*/ true);
+        node_data->context_data, request_reader_gid, /*is_reader=*/true);
       rmw_int2dds_cpp::common_remove_local_entity(
-        node_data->context_data, response_writer_gid, /*is_reader=*/ false);
+        node_data->context_data, response_writer_gid, /*is_reader=*/false);
     }
 
     // Delete DDS entities
@@ -581,8 +596,8 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
       int2dds_delete_topic(srv_data->request_topic);
     }
   } else {
-    // The detach path already released and nulled the reader/writer/topics but
-    // left request_status_condition live and srv_data still referenced by any
+    // The detach path released and nulled the reader/writer/topics but left
+    // request_status_condition live and srv_data still referenced by any
     // wait-set cache. Clean the caches and release the condition before srv_data
     // is freed (no double free: the detach path never touched the condition).
     rmw_int2dds_cpp::waitset_registry_clean_caches();
@@ -611,17 +626,27 @@ rmw_service_server_is_available(
   const rmw_client_t * client,
   bool * is_available)
 {
+// The conformance suite's expectation for null arguments here changed across
+// distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
+// The probe is rmw/get_service_endpoint_info.h (rmw 7.9.1), used here only as a
+// "Lyrical or newer" marker - the suite's expectation is not tied to that
+// header's release, and no distro ships an rmw between 7.8.2 and 7.10.1.
+#if __has_include("rmw/get_service_endpoint_info.h")
+  constexpr rmw_ret_t null_argument_ret = RMW_RET_INVALID_ARGUMENT;
+#else
+  constexpr rmw_ret_t null_argument_ret = RMW_RET_ERROR;
+#endif
   if (node == nullptr) {
     RMW_SET_ERROR_MSG("node argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
   if (client == nullptr) {
     RMW_SET_ERROR_MSG("client argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
   if (is_available == nullptr) {
     RMW_SET_ERROR_MSG("is_available argument is null");
-    return RMW_RET_ERROR;
+    return null_argument_ret;
   }
 
   if (node->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
@@ -728,5 +753,4 @@ rmw_service_set_on_new_request_callback(
   rmw_int2dds_cpp::refresh_service_listener(srv_data);
   return RMW_RET_OK;
 }
-
 }  // extern "C"

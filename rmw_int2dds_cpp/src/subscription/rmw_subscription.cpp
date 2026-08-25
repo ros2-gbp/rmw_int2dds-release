@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cinttypes>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -35,14 +36,17 @@
 #include "rosidl_typesupport_introspection_cpp/field_types.hpp"
 #include "rosidl_typesupport_introspection_cpp/message_introspection.hpp"
 
-#include "int2dds-ffi.h"
+#include "rmw/get_topic_endpoint_info.h"
+#include "rmw_dds_common/qos.hpp"
+
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
 #include "../common/listeners.hpp"  // NOLINT(build/include_subdir)
 #include "../common/type_hash_qos.hpp"
-#include "../graph/discovery.hpp"
 #include "../graph/graph_guard.hpp"
+#include "../graph/discovery.hpp"
 
 // Forward declarations from common utilities
 namespace rmw_int2dds_cpp
@@ -86,7 +90,8 @@ is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
   {
     return false;
   }
-#ifdef RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE
+// best-available marker; the *_LIVELINESS_* form is an enum, so #ifdef on it is always false
+#ifdef RMW_QOS_DEADLINE_BEST_AVAILABLE
   if (liveliness == RMW_QOS_POLICY_LIVELINESS_BEST_AVAILABLE) {
     return false;
   }
@@ -94,16 +99,26 @@ is_explicit_liveliness_policy(rmw_qos_liveliness_policy_t liveliness)
   return true;
 }
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
 int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
+#if !__has_include("rmw/get_service_endpoint_info.h")
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
+#pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -111,9 +126,6 @@ liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
       return INT2DDS_QOS_LIVELINESS_AUTOMATIC;
   }
 }
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
 
 int64_t
 duration_to_ns(const rmw_time_t & duration)
@@ -177,7 +189,7 @@ struct TopicFieldDescriptors
 // Maps a ROS introspection type id to the int2dds field-type enum
 // (INT2DDS_FIELD_*). Defined further below; forward-declared here so the
 // content-filter field-descriptor builder can reuse the single source of truth
-// instead of its own ad-hoc table.
+// instead of its own (incorrect) ad-hoc table.
 int32_t ros_type_to_int2dds_field(uint8_t ros_type);
 
 bool
@@ -356,7 +368,8 @@ build_type_info_from_introspection(
       rosidl_typesupport_introspection_c__identifier) == 0)
   {
     auto * members =
-      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(introspection_ts->data);
+      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(
+      introspection_ts->data);
     if (members == nullptr) {
       cleanup();
       return false;
@@ -447,7 +460,8 @@ populate_field_descriptors(
       rosidl_typesupport_introspection_c__identifier) == 0)
   {
     auto * members =
-      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(introspection_ts->data);
+      static_cast<const rosidl_typesupport_introspection_c__MessageMembers *>(
+      introspection_ts->data);
     if (members == nullptr) {
       return false;
     }
@@ -464,7 +478,7 @@ populate_field_descriptors(
         return false;
       }
     }
-  } else if (std::strcmp(
+  } else if (std::strcmp(  // NOLINT(readability/braces): multi-line condition, ament style
       introspection_ts->typesupport_identifier,
       rosidl_typesupport_introspection_cpp::typesupport_identifier) == 0)
   {
@@ -703,7 +717,6 @@ set_content_filter_options(
 
 extern "C"
 {
-
 rmw_subscription_t *
 rmw_create_subscription(
   const rmw_node_t * node,
@@ -751,7 +764,17 @@ rmw_create_subscription(
     return nullptr;
   }
 
-  const rmw_qos_profile_t actual_qos = resolve_system_default_qos(*qos_policies);
+  // Resolve any BEST_AVAILABLE policies against existing publishers on this topic
+  // (Jazzy feature). No-op when no policy is set to best-available.
+  rmw_qos_profile_t adapted_qos = *qos_policies;
+  rmw_ret_t best_available_ret =
+    rmw_dds_common::qos_profile_get_best_available_for_topic_subscription(
+    node, topic_name, &adapted_qos, rmw_get_publishers_info_by_topic);
+  if (best_available_ret != RMW_RET_OK) {
+    return nullptr;
+  }
+
+  const rmw_qos_profile_t actual_qos = resolve_system_default_qos(adapted_qos);
 
   auto * node_data = static_cast<rmw_int2dds_cpp::NodeData *>(node->data);
   if (node_data == nullptr || node_data->context_data == nullptr) {
@@ -801,15 +824,15 @@ rmw_create_subscription(
     RCUTILS_LOG_INFO_NAMED(
       "rmw_int2dds_cpp",
       "create_subscription topic=%s reliability=%d durability=%d history=%d depth=%zu "
-      "deadline_ns=%lld liveliness=%d lease_ns=%lld",
+      "deadline_ns=%" PRId64 " liveliness=%d lease_ns=%" PRId64 "",
       topic_name,
       static_cast<int>(actual_qos.reliability),
       static_cast<int>(actual_qos.durability),
       static_cast<int>(actual_qos.history),
       actual_qos.depth,
-      static_cast<long long>(duration_to_ns(actual_qos.deadline)),
+      duration_to_ns(actual_qos.deadline),
       static_cast<int>(actual_qos.liveliness),
-      static_cast<long long>(duration_to_ns(actual_qos.liveliness_lease_duration)));
+      duration_to_ns(actual_qos.liveliness_lease_duration));
   }
 
   // Convert ROS topic name to DDS topic name
@@ -828,23 +851,10 @@ rmw_create_subscription(
 
   // Create DDS Topic
   Int2DdsRet dds_ret = INT2DDS_RET_ERROR;
-  bool create_cft_topic = !sub_data->content_filter_expression.empty();
-  if (create_cft_topic) {
+  bool cft_topic_created = false;
+  if (!sub_data->content_filter_expression.empty()) {
     TopicFieldDescriptors descriptors;
-    if (!populate_field_descriptors(introspection_ts, descriptors)) {
-      sub_data->content_filter_expression.clear();
-      sub_data->content_filter_parameters.clear();
-      create_cft_topic = false;
-    }
-  }
-
-  if (create_cft_topic) {
-    TopicFieldDescriptors descriptors;
-    if (!populate_field_descriptors(introspection_ts, descriptors)) {
-      sub_data->content_filter_expression.clear();
-      sub_data->content_filter_parameters.clear();
-      create_cft_topic = false;
-    } else {
+    if (populate_field_descriptors(introspection_ts, descriptors)) {
       std::unique_ptr<bool[]> field_is_key(new bool[descriptors.is_key.size()]);
       for (size_t i = 0; i < descriptors.is_key.size(); ++i) {
         field_is_key[i] = descriptors.is_key[i] != 0U;
@@ -861,16 +871,20 @@ rmw_create_subscription(
         field_is_key.get(),
         descriptors.names.size(),
         &sub_data->topic);
-      if (dds_ret != INT2DDS_RET_OK) {
-        sub_data->content_filter_expression.clear();
-        sub_data->content_filter_parameters.clear();
-        sub_data->topic = nullptr;
-        create_cft_topic = false;
-      }
+      cft_topic_created = (dds_ret == INT2DDS_RET_OK);
+    }
+
+    if (!cft_topic_created) {
+      // Content filtering is unsupported for this type/expression in the
+      // underlying middleware. Per the rmw contract, fall back to a plain
+      // (unfiltered) subscription rather than failing creation; is_cft_enabled
+      // will report false so callers know the filter was not applied.
+      sub_data->content_filter_expression.clear();
+      sub_data->content_filter_parameters.clear();
     }
   }
 
-  if (!create_cft_topic) {
+  if (!cft_topic_created) {
     dds_ret = int2dds_create_topic(
       context_data->participant,
       dds_topic_name.c_str(),
@@ -895,10 +909,12 @@ rmw_create_subscription(
     return nullptr;
   }
 
+  // Adopt the real DDS endpoint GUID as the rmw gid (see rmw_create_publisher),
+  // so local and remote views agree on endpoint identity.
   {
     uint8_t endpoint_guid[16];
     if (int2dds_datareader_get_guid(sub_data->datareader, &endpoint_guid) == INT2DDS_RET_OK) {
-      std::memcpy(sub_data->gid.data, endpoint_guid, sizeof(endpoint_guid));
+      std::memcpy(sub_data->gid.data, endpoint_guid, RMW_GID_STORAGE_SIZE);
     }
   }
 
@@ -918,6 +934,12 @@ rmw_create_subscription(
   subscription->options = *subscription_options;
   subscription->can_loan_messages = false;
   subscription->is_cft_enabled = !sub_data->content_filter_expression.empty();
+#if __has_include("rmw/get_service_endpoint_info.h")
+  // Lyrical+ field (rmw 7.10): int2dds creates DDS content-filtered topics natively.
+  // options.acceptable_buffer_backends (same release) needs no handling here: this
+  // RMW only ever delivers CPU buffers, and CPU is always implicitly acceptable.
+  subscription->is_cft_supported = true;
+#endif
 
   if (subscription->topic_name == nullptr) {
     rmw_subscription_free(subscription);
@@ -936,14 +958,24 @@ rmw_create_subscription(
 
   // Listener starts with an empty mask; refreshed when user callbacks register
   rmw_int2dds_cpp::refresh_subscription_listener(sub_data);
+
+  // Notify graph-change waiters that this subscription was added.
   rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
 
+  // Standard rmw_dds_common graph: register the reader entity + node association.
   if (context_data->common) {
+    rosidl_type_hash_t type_hash{};
+    if (type_support->get_type_hash_func != nullptr) {
+      const rosidl_type_hash_t * h = type_support->get_type_hash_func(type_support);
+      if (h != nullptr) {
+        type_hash = *h;
+      }
+    }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, sub_data->gid, dds_topic_name, sub_data->type_name,
-      sub_data->qos, /*is_reader=*/ true);
-    rmw_int2dds_cpp::common_associate_local_reader(
-      context_data, sub_data->gid, node_data->name, node_data->namespace_);
+      type_hash, sub_data->qos, /*is_reader=*/true);
+    context_data->common->add_subscriber_graph(
+      sub_data->gid, node_data->name, node_data->namespace_);
   }
 
   return subscription;
@@ -987,15 +1019,16 @@ rmw_destroy_subscription(rmw_node_t * node, rmw_subscription_t * subscription)
     }
   }
 
+  // Notify graph-change waiters that this subscription was removed.
   if (context_data != nullptr) {
     rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
   }
 
+  // Standard rmw_dds_common graph: withdraw the reader entity + node association.
   if (context_data != nullptr && context_data->common) {
-    rmw_int2dds_cpp::common_dissociate_local_reader(
-      context_data, sub_data->gid, node_data->name, node_data->namespace_);
-    rmw_int2dds_cpp::common_remove_local_entity(
-      context_data, sub_data->gid, /*is_reader=*/ true);
+    rmw_int2dds_cpp::common_remove_local_entity(context_data, sub_data->gid, /*is_reader=*/true);
+    context_data->common->remove_subscriber_graph(
+      sub_data->gid, node_data->name, node_data->namespace_);
   }
 
   // Delete DDS entities
@@ -1152,13 +1185,18 @@ rmw_subscription_set_content_filter(
 
   if (!has_cft_reader && !filter_enabled) {
     // This subscription has no content-filtered reader, so it does not support
-    // content filtering at all. Report UNSUPPORTED consistently for every
-    // filter operation instead of silently succeeding on an empty filter.
+    // content filtering at all. Report UNSUPPORTED consistently for every filter
+    // operation (matching the rmw contract and the get/set-with-filter paths)
+    // instead of silently succeeding on an empty filter.
     subscription->is_cft_enabled = false;
     return RMW_RET_UNSUPPORTED;
   }
 
   if (!has_cft_reader && filter_enabled) {
+    // The subscription was created without a content-filtered reader (the
+    // middleware could not provide one for this type/expression). Turning a
+    // plain subscription into a filtered one at runtime is therefore not
+    // supported; restore the prior unfiltered state and report it as such.
     sub_data->content_filter_expression = previous_expression;
     sub_data->content_filter_parameters = previous_parameters;
     subscription->is_cft_enabled = !previous_expression.empty();
@@ -1176,6 +1214,10 @@ rmw_subscription_set_content_filter(
       return RMW_RET_ERROR;
     }
     subscription->is_cft_enabled = !sub_data->content_filter_expression.empty();
+    // The middleware could not apply the requested content filter; the previous
+    // (unfiltered) reader has been restored. Report this as unsupported rather
+    // than a hard error, matching the rmw contract exercised by test_subscription
+    // (no_content_filter_set / set_content_filter else-branch).
     return RMW_RET_UNSUPPORTED;
   }
 
@@ -1204,11 +1246,19 @@ rmw_subscription_get_content_filter(
     return RMW_RET_ERROR;
   }
 
+  // No content filter configured on this subscription: report it as unsupported
+  // rather than returning an empty filter, matching the rmw contract exercised
+  // by test_subscription (no_content_filter_get / get_content_filter else-branch).
   if (sub_data->content_filter_expression.empty()) {
     return RMW_RET_UNSUPPORTED;
   }
 
   *options = rmw_get_zero_initialized_content_filter_options();
+
+  if (sub_data->content_filter_expression.empty()) {
+    RMW_SET_ERROR_MSG("subscription has no content filter");
+    return RMW_RET_UNSUPPORTED;
+  }
 
   std::vector<const char *> parameter_ptrs;
   parameter_ptrs.reserve(sub_data->content_filter_parameters.size());
@@ -1276,5 +1326,4 @@ rmw_subscription_get_network_flow_endpoints(
   RMW_SET_ERROR_MSG("rmw_subscription_get_network_flow_endpoints is not supported");
   return RMW_RET_UNSUPPORTED;
 }
-
 }  // extern "C"
