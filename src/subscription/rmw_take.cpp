@@ -42,9 +42,9 @@
 #include "rmw_int2dds_cpp/cdr_serializer.hpp"
 #include "../common/take_with_info.hpp"  // NOLINT(build/include_subdir)
 
-// Keep the initial receive buffer comfortably above common large-message test sizes.
-// Large payloads can exceed their nominal application size once CDR/framing metadata is included.
-static constexpr size_t DEFAULT_RECEIVE_BUFFER_SIZE = 2 * 1024 * 1024;
+// Held per subscription, so this multiplies by reader count -- size it for the common
+// case. Larger payloads grow the buffer on demand; get_data reports the size it needs.
+static constexpr size_t DEFAULT_RECEIVE_BUFFER_SIZE = 64 * 1024;
 
 namespace
 {
@@ -522,6 +522,7 @@ rmw_take_sequence(
     return RMW_RET_OK;
   }
   if (ret != INT2DDS_RET_OK) {
+    int2dds_sample_seq_delete(seq);
     RMW_SET_ERROR_MSG("failed to batch-take from DDS");
     return RMW_RET_ERROR;
   }
