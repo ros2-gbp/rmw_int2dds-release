@@ -1,4 +1,4 @@
-# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = rolling).
+# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = lyrical).
 # Each version branch (humble/jazzy/lyrical/rolling) carries its own copy of this workflow
 # with ROS_DISTRO set to that branch's distro. amd64 and arm64 are built and verified
 # (official ros:<distro>-ros-base images ship for those two architectures).
@@ -6,16 +6,11 @@
 # Each arch runs on its NATIVE GitHub-hosted runner (amd64 -> ubuntu-26.04,
 # arm64 -> ubuntu-26.04-arm). This avoids QEMU user-mode emulation, under which
 # libc-bin's ldconfig trigger segfaults during `apt-get install` of the debs.
-#
-# Caveat specific to this branch: ros:rolling-ros-base is a moving target, and
-# rolling itself is published to ros2-testing rather than ros2. A tag build is
-# therefore not reproducible - rebuilding the same tag later picks up whatever
-# rolling has become. Treat these debs as snapshots, not releases.
 name: package-deb
 
 on:
   pull_request:
-    branches: [rolling]
+    branches: [lyrical]
     paths:
       - 'packaging/**'
       # A bump of INT2DDS_FFI_VERSION changes what lands in the vendor deb, so
@@ -27,7 +22,7 @@ on:
   workflow_dispatch:
 
 env:
-  ROS_DISTRO: rolling
+  ROS_DISTRO: lyrical
 
 jobs:
   build:
