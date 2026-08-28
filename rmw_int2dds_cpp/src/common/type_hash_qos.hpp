@@ -23,18 +23,7 @@
 
 #include "rmw/types.h"
 
-#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
-
-// ROS 2 Iron and newer (e.g. Jazzy) expose rosidl type hash hooks and the
-// rmw_dds_common helper used to embed the type hash into DDS user_data QoS for
-// type-compatibility matching. ROS 2 Humble does not. Feature-detect so a single
-// source builds on both distros: real implementation where the API exists,
-// empty user_data fallback where it does not.
-#if __has_include("rosidl_runtime_c/type_hash.h")
-#define RMW_INT2DDS_HAS_TYPE_HASH 1
-#include "rmw/error_handling.h"
-#include "rmw_dds_common/qos.hpp"
-#endif
+#include "int2dds-ffi.h"
 
 namespace rmw_int2dds_cpp
 {
@@ -85,9 +74,8 @@ resolve_actual_qos(rmw_qos_profile_t * qos)
   {
     qos->liveliness = RMW_QOS_POLICY_LIVELINESS_AUTOMATIC;
   }
-  // A default ({0,0}) deadline/lifespan/lease duration resolves to infinite, which is
-  // the effective DDS default. get_actual_qos must report that (not zero) for a default
-  // profile, otherwise the value compares below the expected infinite duration.
+  // A default ({0,0}) deadline/lifespan/lease duration resolves to infinite,
+  // which is the effective DDS default.
   const rmw_time_t infinite_duration = RMW_DURATION_INFINITE;
   if (qos->deadline.sec == 0 && qos->deadline.nsec == 0) {
     qos->deadline = infinite_duration;
@@ -103,47 +91,24 @@ resolve_actual_qos(rmw_qos_profile_t * qos)
 inline std::string
 encode_message_type_hash_user_data(const rosidl_message_type_support_t * type_support)
 {
-#ifdef RMW_INT2DDS_HAS_TYPE_HASH
-  if (type_support == nullptr || type_support->get_type_hash_func == nullptr) {
-    return {};
-  }
-
-  const rosidl_type_hash_t * type_hash = type_support->get_type_hash_func(type_support);
-  if (type_hash == nullptr) {
-    return {};
-  }
-
-  std::string encoded;
-  if (RMW_RET_OK != rmw_dds_common::encode_type_hash_for_user_data_qos(*type_hash, encoded)) {
-    rmw_reset_error();
-    return {};
-  }
-
-  return encoded;
-#else
   // ROS 2 Humble does not expose the newer rosidl type hash hooks used for
-  // DDS user_data QoS matching. Leave user_data empty on this distro.
+  // DDS user_data QoS matching. Leave user_data empty on this branch.
   (void)type_support;
   return {};
-#endif
 }
 
 inline std::string
 encode_service_request_type_hash_user_data(const rosidl_service_type_support_t * type_support)
 {
-  if (type_support == nullptr || type_support->request_typesupport == nullptr) {
-    return {};
-  }
-  return encode_message_type_hash_user_data(type_support->request_typesupport);
+  (void)type_support;
+  return {};
 }
 
 inline std::string
 encode_service_response_type_hash_user_data(const rosidl_service_type_support_t * type_support)
 {
-  if (type_support == nullptr || type_support->response_typesupport == nullptr) {
-    return {};
-  }
-  return encode_message_type_hash_user_data(type_support->response_typesupport);
+  (void)type_support;
+  return {};
 }
 
 inline void

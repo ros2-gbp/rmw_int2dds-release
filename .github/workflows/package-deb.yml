@@ -1,4 +1,4 @@
-# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = jazzy).
+# Build per-architecture .deb packages for the int2DDS RMW stack (this branch = humble).
 # Each version branch (jazzy/humble/rolling) carries its own copy of this workflow with
 # ROS_DISTRO set to that branch's distro. amd64 and arm64 are built and verified
 # (official ros:<distro>-ros-base images ship for those two architectures).
@@ -10,19 +10,16 @@ name: package-deb
 
 on:
   pull_request:
-    branches: [jazzy]
+    branches: [humble]
     paths:
       - 'packaging/**'
-      # A bump of INT2DDS_FFI_VERSION changes what lands in the vendor deb, so
-      # it has to trigger this workflow too.
-      - 'int2dds_ffi_vendor/**'
       - '.github/workflows/package-deb.yml'
   push:
     tags: ['v*']
   workflow_dispatch:
 
 env:
-  ROS_DISTRO: jazzy
+  ROS_DISTRO: humble
 
 jobs:
   build:

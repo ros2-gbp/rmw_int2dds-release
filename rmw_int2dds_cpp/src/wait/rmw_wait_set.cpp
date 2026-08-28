@@ -25,6 +25,7 @@
 
 extern "C"
 {
+
 rmw_wait_set_t *
 rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
 {
@@ -80,8 +81,10 @@ rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
 rmw_ret_t
 rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
 {
-  // The RMW conformance suite expects RMW_RET_ERROR (not INVALID_ARGUMENT) here.
-  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_ERROR);
+  if (wait_set == nullptr) {
+    RMW_SET_ERROR_MSG("wait_set argument is null");
+    return RMW_RET_ERROR;
+  }
 
   if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
     RMW_SET_ERROR_MSG("wait set not from this implementation");
@@ -107,4 +110,5 @@ rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
   rmw_wait_set_free(wait_set);
   return RMW_RET_OK;
 }
+
 }  // extern "C"

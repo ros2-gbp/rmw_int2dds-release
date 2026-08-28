@@ -33,6 +33,7 @@ const char * const serialization_format = "cdr";
 
 extern "C"
 {
+
 namespace
 {
 
@@ -106,4 +107,5 @@ rmw_feature_supported(rmw_feature_t feature)
       return false;
   }
 }
+
 }  // extern "C"

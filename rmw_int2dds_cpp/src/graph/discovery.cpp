@@ -24,14 +24,10 @@
 #include <vector>
 
 #include "rcutils/allocator.h"
-#include "rcutils/logging_macros.h"
 
-#include "rmw/allocators.h"
 #include "rmw/error_handling.h"
 #include "rmw/rmw.h"
 #include "rmw/serialized_message.h"
-
-#include "rmw_int2dds_cpp/identifier.hpp"
 
 #include "rosidl_runtime_c/message_type_support_struct.h"
 #include "rosidl_typesupport_cpp/message_type_support.hpp"
@@ -61,6 +57,13 @@ namespace
 // Literal topic name shared by all ROS 2 RMWs for node-graph discovery.
 constexpr const char * kDiscoveryTopicName = "ros_discovery_info";
 
+const rosidl_message_type_support_t *
+get_discovery_type_support()
+{
+  return rosidl_typesupport_cpp::get_message_type_support_handle<
+    rmw_dds_common::msg::ParticipantEntitiesInfo>();
+}
+
 // Serialize a ParticipantEntitiesInfo message and write it on the discovery writer.
 // Reuses int2dds' standard CDR path (rmw_serialize), identical to user messages.
 rmw_ret_t publish_entities_info(
@@ -71,12 +74,14 @@ rmw_ret_t publish_entities_info(
   if (writer == nullptr || type_support == nullptr || msg == nullptr) {
     return RMW_RET_ERROR;
   }
+
   rcutils_allocator_t allocator = rcutils_get_default_allocator();
   rmw_serialized_message_t serialized = rmw_get_zero_initialized_serialized_message();
   rmw_ret_t ret = rmw_serialized_message_init(&serialized, 0u, &allocator);
   if (ret != RMW_RET_OK) {
     return ret;
   }
+
   ret = rmw_serialize(msg, type_support, &serialized);
   if (ret == RMW_RET_OK) {
     const Int2DdsRet wret = int2dds_datawriter_write_serialized(
@@ -85,13 +90,27 @@ rmw_ret_t publish_entities_info(
       ret = RMW_RET_ERROR;
     }
   }
+
   std::ignore = rmw_serialized_message_fini(&serialized);
   return ret;
 }
 
+rmw_ret_t publish_common_graph_message(
+  ContextData * context_data,
+  const rmw_dds_common::msg::ParticipantEntitiesInfo & msg)
+{
+  if (context_data == nullptr || context_data->discovery_writer == nullptr) {
+    return RMW_RET_ERROR;
+  }
+
+  return publish_entities_info(
+    context_data->discovery_writer,
+    get_discovery_type_support(),
+    &msg);
+}
+
 // Listener loop: take ParticipantEntitiesInfo samples from the discovery reader,
-// drop our own, and merge remote ones into the GraphCache. Polls so it does not
-// need a waitset; exits when thread_is_running is cleared.
+// drop our own, and merge remote ones into the rmw_dds_common GraphCache.
 void listener_loop(
   ContextData * context_data,
   const rosidl_message_type_support_t * type_support)
@@ -102,34 +121,6 @@ void listener_loop(
     bool valid = false;
     const Int2DdsRet take = int2dds_datareader_take_serialized(
       context_data->discovery_reader, buffer.data(), buffer.size(), &actual_size, &valid);
-
-    // A sample larger than our buffer stays in the reader cache, and this reader is
-    // KEEP_ALL: retrying at the same size would spin on that one sample forever and
-    // block every participant queued behind it. Grow to the size the FFI reports and
-    // take again instead.
-    if (take == INT2DDS_RET_BUFFER_TOO_SMALL) {
-      // Only grow, and only within reason. Retrying without a bigger buffer would
-      // spin this thread at full speed - the very failure mode the growth is here
-      // to remove - and an implausible length must not turn into a huge
-      // allocation whose bad_alloc escapes the listener thread.
-      constexpr uintptr_t kMaxDiscoverySampleBytes = 16u * 1024u * 1024u;
-      if (actual_size <= buffer.size() || actual_size > kMaxDiscoverySampleBytes) {
-        RCUTILS_LOG_ERROR_NAMED(
-          "rmw_int2dds_cpp",
-          "discovery reader reported an unusable sample size %zu (buffer is %zu); "
-          "dropping this take",
-          static_cast<size_t>(actual_size), buffer.size());
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        continue;
-      }
-      RCUTILS_LOG_WARN_NAMED(
-        "rmw_int2dds_cpp",
-        "discovery sample needs %zu bytes, buffer is %zu; growing",
-        static_cast<size_t>(actual_size), buffer.size());
-      buffer.resize(actual_size);
-      continue;
-    }
-
     if (take != INT2DDS_RET_OK || !valid || actual_size == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(20));
       continue;
@@ -150,7 +141,7 @@ void listener_loop(
     rmw_gid_t msg_gid;
     rmw_dds_common::convert_msg_to_gid(&msg.gid, &msg_gid);
     if (msg_gid == context_data->common->gid) {
-      continue;  // our own announcement
+      continue;
     }
 
     context_data->common->graph_cache.update_participant_entities(msg);
@@ -167,9 +158,7 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
   }
 
   // Typesupport for the discovery message (generic handle + introspection handle).
-  const rosidl_message_type_support_t * type_support =
-    rosidl_typesupport_cpp::get_message_type_support_handle<
-    rmw_dds_common::msg::ParticipantEntitiesInfo>();
+  const rosidl_message_type_support_t * type_support = get_discovery_type_support();
   const rosidl_message_type_support_t * introspection_ts =
     get_message_typesupport_handle(
     type_support, rosidl_typesupport_introspection_cpp::typesupport_identifier);
@@ -232,57 +221,36 @@ rmw_ret_t init_discovery(ContextData * context_data, const char * enclave)
 
   // rmw_dds_common Context: holds the standard GraphCache. The participant gid must be
   // the real RTPS participant key (GUID prefix), not a synthetic value: remote endpoints
-  // discovered over SEDP carry that same participant key, so rmw_dds_common can only
-  // associate an endpoint with the node that owns it (get_*_info_by_topic / by_node) when
-  // both sides use the same key. The discovery writer lives on this participant, so its
-  // GUID prefix is the participant key. Fall back to a synthetic gid only if unavailable.
+  // discovered over SEDP carry that same participant key, so rmw_dds_common can associate
+  // an endpoint with the node that owns it.
   context_data->common = std::make_unique<rmw_dds_common::Context>();
   context_data->common->gid = generate_participant_gid();
   {
     uint8_t writer_guid[16] = {};
-    if (int2dds_datawriter_get_guid(context_data->discovery_writer, &writer_guid) ==
+    if (int2dds_datawriter_get_guid(
+        context_data->discovery_writer, reinterpret_cast<uint8_t(*)[16]>(&writer_guid)) ==
       INT2DDS_RET_OK)
     {
-      std::memset(
-        context_data->common->gid.data, 0, sizeof(context_data->common->gid.data));
+      std::memset(context_data->common->gid.data, 0, sizeof(context_data->common->gid.data));
       std::memcpy(context_data->common->gid.data, writer_guid, 12);
     }
   }
-  // rmw_dds_common's add_*_graph reject a null publisher before touching the
-  // cache, so provide a minimal non-null handle. The publish_callback ignores it
-  // (it writes through the captured int2dds writer), so no rmw publisher is needed.
-  context_data->common->pub = rmw_publisher_allocate();
-  if (context_data->common->pub != nullptr) {
-    context_data->common->pub->implementation_identifier = implementation_identifier;
-    context_data->common->pub->data = nullptr;
-    context_data->common->pub->topic_name = kDiscoveryTopicName;
-  }
+  context_data->common->pub = nullptr;
   context_data->common->sub = nullptr;
   context_data->common->listener_thread_gc = nullptr;
   context_data->common->graph_guard_condition = nullptr;
   context_data->common->thread_is_running.store(false);
 
-  // publish_callback serializes the ParticipantEntitiesInfo and writes it. The pub
-  // argument is unused; the int2dds writer is captured directly.
-  Int2DdsDataWriter * const writer = context_data->discovery_writer;
-  context_data->common->publish_callback =
-    [writer, type_support](const rmw_publisher_t *, const void * msg) -> rmw_ret_t {
-      return publish_entities_info(writer, type_support, msg);
-    };
-
-  // Wake waitsets monitoring the graph whenever the cache changes (local or remote).
   context_data->common->graph_cache.set_on_change_callback(
     [context_data]() {
       trigger_graph_guard_condition(context_data);
     });
 
   // Register this participant so node/endpoint associations have a home.
-  // Use the context enclave (matches the old heuristic node-info enclave) so
-  // get_node_names_with_enclaves reports the real enclave rather than "".
+  // Use the context enclave so get_node_names_with_enclaves reports it.
   context_data->common->graph_cache.add_participant(
     context_data->common->gid, enclave != nullptr ? enclave : "/");
 
-  // Start the listener thread that ingests remote ParticipantEntitiesInfo.
   context_data->common->thread_is_running.store(true);
   context_data->common->listener_thread =
     std::thread(listener_loop, context_data, type_support);
@@ -300,9 +268,8 @@ void fini_discovery(ContextData * context_data)
   }
   // Stop new callbacks from touching context_data before we tear it down.
   disable_endpoint_push(context_data);
-  // Stop and join the listener thread before destroying the reader it polls.
   if (context_data->common) {
-    context_data->common->graph_cache.set_on_change_callback(nullptr);
+    context_data->common->graph_cache.clear_on_change_callback();
     context_data->common->thread_is_running.store(false);
     if (context_data->common->listener_thread.joinable()) {
       context_data->common->listener_thread.join();
@@ -320,47 +287,132 @@ void fini_discovery(ContextData * context_data)
     int2dds_delete_topic(context_data->discovery_topic);
     context_data->discovery_topic = nullptr;
   }
-  if (context_data->common && context_data->common->pub != nullptr) {
-    rmw_publisher_free(context_data->common->pub);
-    context_data->common->pub = nullptr;
-  }
-  // Hold remote_sync_mutex: an endpoint-discovery callback still in flight reads
-  // context_data->common, and resetting it out from under one would crash.
   {
     std::lock_guard<std::mutex> lock(context_data->remote_sync_mutex);
     context_data->common.reset();
   }
 }
 
-void common_add_local_entity(
+rmw_ret_t announce_node(
+  ContextData * context_data, const std::string & name,
+  const std::string & ns)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.add_node(context_data->common->gid, name, ns);
+  return publish_common_graph_message(context_data, msg);
+}
+
+rmw_ret_t withdraw_node(
+  ContextData * context_data, const std::string & name,
+  const std::string & ns)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.remove_node(context_data->common->gid, name, ns);
+  return publish_common_graph_message(context_data, msg);
+}
+
+rmw_ret_t common_add_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
-  const std::string & dds_topic_name,
+  const std::string & topic_name,
   const std::string & type_name,
-  const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
   bool is_reader)
 {
   if (context_data == nullptr || !context_data->common) {
-    return;
+    return RMW_RET_OK;
   }
-  // type_hash is carried so get_*_info_by_topic reports the real topic type hash.
-  // The entity is keyed by its DDS GUID so it correlates with the remote view
-  // (ros_discovery_info associations + SEDP entity discovery).
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
   context_data->common->graph_cache.add_entity(
-    gid, dds_topic_name, type_name, type_hash,
-    context_data->common->gid, qos, is_reader);
+    gid, topic_name, type_name, context_data->common->gid, qos, is_reader);
+  return RMW_RET_OK;
 }
 
-void common_remove_local_entity(
+rmw_ret_t common_remove_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
   bool is_reader)
 {
   if (context_data == nullptr || !context_data->common) {
-    return;
+    return RMW_RET_OK;
   }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
   context_data->common->graph_cache.remove_entity(gid, is_reader);
+  return RMW_RET_OK;
+}
+
+rmw_ret_t common_associate_local_writer(
+  ContextData * context_data,
+  const rmw_gid_t & writer_gid,
+  const std::string & node_name,
+  const std::string & node_namespace)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.associate_writer(
+    writer_gid, context_data->common->gid, node_name, node_namespace);
+  return publish_common_graph_message(context_data, msg);
+}
+
+rmw_ret_t common_dissociate_local_writer(
+  ContextData * context_data,
+  const rmw_gid_t & writer_gid,
+  const std::string & node_name,
+  const std::string & node_namespace)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.dissociate_writer(
+    writer_gid, context_data->common->gid, node_name, node_namespace);
+  return publish_common_graph_message(context_data, msg);
+}
+
+rmw_ret_t common_associate_local_reader(
+  ContextData * context_data,
+  const rmw_gid_t & reader_gid,
+  const std::string & node_name,
+  const std::string & node_namespace)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.associate_reader(
+    reader_gid, context_data->common->gid, node_name, node_namespace);
+  return publish_common_graph_message(context_data, msg);
+}
+
+rmw_ret_t common_dissociate_local_reader(
+  ContextData * context_data,
+  const rmw_gid_t & reader_gid,
+  const std::string & node_name,
+  const std::string & node_namespace)
+{
+  if (context_data == nullptr || !context_data->common) {
+    return RMW_RET_OK;
+  }
+
+  std::lock_guard<std::mutex> lock(context_data->common->node_update_mutex);
+  auto msg = context_data->common->graph_cache.dissociate_reader(
+    reader_gid, context_data->common->gid, node_name, node_namespace);
+  return publish_common_graph_message(context_data, msg);
 }
 
 }  // namespace rmw_int2dds_cpp

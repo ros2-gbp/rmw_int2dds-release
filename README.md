@@ -36,14 +36,12 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 # 1) Get the sources into your ROS 2 workspace
-# This repository carries every package you need: rmw_int2dds_cpp, its
-# int2dds_ffi_vendor dependency, and the rmw_int2dds_validation probes.
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/humble/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -63,16 +61,16 @@ distro + architecture from the
 [Releases](https://github.com/IntellectusCorp/rmw_int2dds/releases) page, then:
 
 ```bash
-sudo apt install ./ros-jazzy-int2dds-ffi-vendor_*_amd64.deb \
-                 ./ros-jazzy-rmw-int2dds-cpp_*_amd64.deb
-source /opt/ros/jazzy/setup.bash
+sudo apt install ./ros-humble-int2dds-ffi-vendor_*_amd64.deb \
+                 ./ros-humble-rmw-int2dds-cpp_*_amd64.deb
+source /opt/ros/humble/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ros2 run demo_nodes_cpp talker
 ```
 
 `apt install ./file.deb` installs the file and resolves its dependencies (the rmw
 package pulls in the vendor package automatically). The RMW library and its
-ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
+ament-index marker install into `/opt/ros/humble/`, so once the environment is
 sourced only `RMW_IMPLEMENTATION` needs to be set.
 
 Supported: **jazzy / humble / rolling** × **amd64 / arm64**.
@@ -83,13 +81,29 @@ armhf.
 To build the packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
 Docker; see `packaging/` for the build and verification scripts).
 
+## Repository layout
+
+This repository holds two ROS 2 packages, released together:
+
+| Package | Role |
+|---------|------|
+| [`rmw_int2dds_cpp/`](rmw_int2dds_cpp/) | The RMW implementation itself |
+| [`int2dds_ffi_vendor/`](int2dds_ffi_vendor/) | Fetches the prebuilt int2DDS FFI library and exports it to CMake |
+
 ## Middleware library dependency
 
-This package links against the closed-source **int2DDS FFI library**
-(`libint2dds_ffi.so*` and `int2dds-ffi.h`), which is provided by the
-`int2dds_ffi_vendor` package. The vendor package downloads the release
-artifact, verifies the selected library against the manifest, and exports the
+This package links against the **int2DDS FFI library** (`libint2dds_ffi.so*`
+and `int2dds-ffi.h`), which is provided by the `int2dds_ffi_vendor` package in
+this repository. At CMake configure time the vendor package downloads the
+per-OS tarball from the
+[int2dds_ffi_vendor releases](https://github.com/IntellectusCorp/int2dds_ffi_vendor/releases),
+selects the artifact matching the host architecture and libc, verifies it
+against the `sha256` recorded in the bundled manifest, and exports the
 `int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
+
+Building therefore needs outbound network access to `github.com`. The FFI
+version is pinned in one place: `INT2DDS_FFI_VERSION` in
+[int2dds_ffi_vendor/CMakeLists.txt](int2dds_ffi_vendor/CMakeLists.txt).
 
 ## Test status
 

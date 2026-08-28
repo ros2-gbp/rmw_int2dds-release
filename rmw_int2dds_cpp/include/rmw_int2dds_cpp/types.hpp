@@ -63,7 +63,6 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_FINAL = 0;
 constexpr int32_t INT2DDS_EXTENSIBILITY_APPENDABLE = 1;
 constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 
-// Forward declaration
 struct ServiceData;
 struct ClientData;
 
@@ -96,22 +95,16 @@ struct ContextData
   Int2DdsDataReader * discovery_reader{nullptr};
 
   size_t domain_id{0};
-  // Precomputed "ip:port,..." list wired into int2dds SPDP unicast discovery via
-  // the "int2dds.initial_peers" participant property. Empty unless the user set
-  // rmw_discovery_options static_peers. Computed once in rmw_init.
-  std::string initial_peers;
-  // True when the user requested localhost-only discovery. Applied via
-  // multicast_ttl=0 so multicast SPDP stays on the host (remote hosts do not
-  // auto-discover this participant; local discovery is unaffected). Set in rmw_init.
+  // True when the user requested localhost-only discovery (Humble: the init-options
+  // localhost_only field). Applied via multicast_ttl=0 so multicast SPDP stays on
+  // the host; local discovery is unaffected. Set in rmw_init.
   bool localhost_only{false};
   bool is_shutdown{false};
   std::atomic<int> ref_count{0};
   std::mutex mutex;
 
-  // P3: remote endpoints (DDS GUID -> is_reader) currently mirrored from int2dds
-  // DDS discovery into the rmw_dds_common GraphCache entity layer. Each sync adds
-  // newly-discovered remote endpoints and drops departed ones. Guarded by
-  // remote_sync_mutex.
+  // Remote endpoints (DDS GUID -> is_reader) mirrored from int2DDS DDS
+  // discovery into rmw_dds_common GraphCache. Guarded by remote_sync_mutex.
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
 };
@@ -284,10 +277,6 @@ struct WaitSetData
   // Attached conditions, each stamped with the attach_generation that last
   // wanted it. A rebuild detaches whatever keeps an older stamp.
   uint64_t attach_generation{0};
-  // Set when an attach failed, so the next rmw_wait rebuilds even if the entity
-  // set is unchanged - including when it is empty, which no comparison against
-  // the cached lists can express.
-  bool force_rebuild{false};
   std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
   std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };
