@@ -36,14 +36,14 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 # 1) Get the sources into your ROS 2 workspace
-mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 # This repository carries every package you need: rmw_int2dds_cpp, its
 # int2dds_ffi_vendor dependency, and the rmw_int2dds_validation probes.
-git clone -b lyrical https://github.com/IntellectusCorp/rmw_int2dds.git
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/lyrical/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -56,14 +56,6 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
-## Middleware library dependency
-
-This package links against the closed-source **int2DDS FFI library**
-(`libint2dds_ffi.so*` and `int2dds-ffi.h`), which is provided by the
-`int2dds_ffi_vendor` package. The vendor package downloads the release
-artifact, verifies the selected library against the manifest, and exports the
-`int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
-
 ## Binary install (.deb)
 
 Prebuilt packages let you skip `colcon build`. Download the two `.deb`s for your
@@ -71,25 +63,33 @@ distro + architecture from the
 [Releases](https://github.com/IntellectusCorp/rmw_int2dds/releases) page, then:
 
 ```bash
-sudo apt install ./ros-lyrical-int2dds-ffi-vendor_*_amd64.deb \
-                 ./ros-lyrical-rmw-int2dds-cpp_*_amd64.deb
-source /opt/ros/lyrical/setup.bash
+sudo apt install ./ros-jazzy-int2dds-ffi-vendor_*_amd64.deb \
+                 ./ros-jazzy-rmw-int2dds-cpp_*_amd64.deb
+source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ros2 run demo_nodes_cpp talker
 ```
 
 `apt install ./file.deb` installs the file and resolves its dependencies (the rmw
 package pulls in the vendor package automatically). The RMW library and its
-ament-index marker install into `/opt/ros/lyrical/`, so once the environment is
+ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
 sourced only `RMW_IMPLEMENTATION` needs to be set.
 
-Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64**.
-**armhf** is best-effort - there are no official ROS 2 armhf apt packages, so an
+Supported: **jazzy / humble / rolling** × **amd64 / arm64**.
+**armhf** is best-effort — there are no official ROS 2 armhf apt packages, so an
 armhf `.deb` only works on a system where ROS 2 was itself built from source for
 armhf.
 
 To build the packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
 Docker; see `packaging/` for the build and verification scripts).
+
+## Middleware library dependency
+
+This package links against the closed-source **int2DDS FFI library**
+(`libint2dds_ffi.so*` and `int2dds-ffi.h`), which is provided by the
+`int2dds_ffi_vendor` package. The vendor package downloads the release
+artifact, verifies the selected library against the manifest, and exports the
+`int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
 
 ## Test status
 
@@ -165,7 +165,7 @@ verified against the per-test xunit/gtest XML results):
 - QoS mapping: [doc/qos_mapping.rst](rmw_int2dds_cpp/doc/qos_mapping.rst)
 - Security: [doc/security.rst](rmw_int2dds_cpp/doc/security.rst) — **note: DDS-Security / SROS 2 is not supported yet**
 - Examples: [examples/](rmw_int2dds_cpp/examples/)
-- API docs are published at `docs.ros.org/en/{humble,jazzy,lyrical}/p/rmw_int2dds_cpp/` once released.
+- API docs are published at `docs.ros.org/en/{humble,jazzy}/p/rmw_int2dds_cpp/` once released.
 
 ## Contributing
 

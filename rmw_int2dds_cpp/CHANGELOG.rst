@@ -75,29 +75,9 @@ Changelog for package rmw_int2dds_cpp
 * Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
   locally built FFI tarball instead of the published release asset - the release
   tag alone does not identify the ABI.
-* Build on ROS 2 Lyrical: C++20, and namespaced CMake targets instead of
-  ``ament_target_dependencies()``, which ament_cmake no longer defines.
-* Adapt to the Lyrical rmw API behind ``__has_include`` probes, so the same
-  sources still build on Jazzy and Humble: enclave string ownership through
-  ``rmw_enclave_options_copy``/``_fini``, no ``rmw_localhost_only_t``, no
-  ``RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE``, and ``RMW_RET_INVALID_ARGUMENT``
-  where the conformance suite previously expected ``RMW_RET_ERROR``.
-* Implement ``rmw_get_clients_info_by_service`` and
-  ``rmw_get_servers_info_by_service``, new in Lyrical, and publish the
-  service-level type hash the graph needs to answer them.
-* Delete a node's publisher DataWriters in ``rmw_destroy_node``. Lyrical's rclpy
-  defers publisher teardown, so ``rmw_destroy_publisher`` may never run before
-  the participant is gone, orphaning each cycle's DataWriter history cache.
-* Narrow the buildtool dependency from ``ament_cmake_ros`` to
-  ``ament_cmake_ros_core``. The umbrella package exec_depends on
-  ``rmw_test_fixture_implementation``, which build_depends on
-  ``rmw_implementation``, which group_depends back on this package. That cycle
-  broke release job generation for the whole distribution and reverted the
-  0.1.0 release.
-* Load ``ament_cmake_ros_core`` rather than only declaring it, so
-  ``BUILD_SHARED_LIBS`` and ``ROS_PACKAGE_NAME`` are actually set.
-* Raise ``cmake_minimum_required`` to 3.20, the platform minimum for this
-  distribution.
+* Load the ``ament_cmake_ros`` buildtool dependency the package already declared.
+  Declaring without loading it set neither ``BUILD_SHARED_LIBS`` nor
+  ``ROS_PACKAGE_NAME``.
 * Add ``testing/check-dependency-cycle.py``, which replays the build farm's
   release job sort over this checkout, next to the container test harness.
 * Run that check in CI on every push and pull request to this branch.
