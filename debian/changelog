@@ -1,0 +1,13 @@
+ros-rolling-rmw-int2dds-validation (0.1.1-1trixie) trixie; urgency=high
+
+  * Split the rclcpp and rclpy validation probes out of ``rmw_int2dds_cpp`` into
+    this package: QoS behaviour (durability, history depth, deadline, liveliness,
+    lifespan), content-filtered topic lifecycle, executor callback smoke checks,
+    and latency/throughput/readiness measurements. An RMW implementation cannot
+    depend on ``rclcpp`` without closing a build dependency cycle, so the probes
+    live here.
+  * Contributors: Intellectus Corp.
+
+ -- "Jungsup Lee" <int2dds@int2.us>  Thu, 27 Aug 2026 15:00:00 -0000
+
+
