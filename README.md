@@ -24,6 +24,7 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 | Humble Hawksbill (LTS) | Supported (verified) |
 | Jazzy Jalisco (LTS)    | Supported (verified) |
 | Lyrical Luth (LTS)     | Supported (verified) |
+| Rolling Ridley         | Supported (in-repo checks only - see Test status) |
 
 ### Supported platforms
 
@@ -36,14 +37,14 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 # 1) Get the sources into your ROS 2 workspace
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
 # This repository carries every package you need: rmw_int2dds_cpp, its
 # int2dds_ffi_vendor dependency, and the rmw_int2dds_validation probes.
-mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b rolling https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/rolling/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -56,33 +57,6 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
-## Binary install (.deb)
-
-Prebuilt packages let you skip `colcon build`. Download the two `.deb`s for your
-distro + architecture from the
-[Releases](https://github.com/IntellectusCorp/rmw_int2dds/releases) page, then:
-
-```bash
-sudo apt install ./ros-jazzy-int2dds-ffi-vendor_*_amd64.deb \
-                 ./ros-jazzy-rmw-int2dds-cpp_*_amd64.deb
-source /opt/ros/jazzy/setup.bash
-export RMW_IMPLEMENTATION=rmw_int2dds_cpp
-ros2 run demo_nodes_cpp talker
-```
-
-`apt install ./file.deb` installs the file and resolves its dependencies (the rmw
-package pulls in the vendor package automatically). The RMW library and its
-ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
-sourced only `RMW_IMPLEMENTATION` needs to be set.
-
-Supported: **jazzy / humble / rolling** × **amd64 / arm64**.
-**armhf** is best-effort — there are no official ROS 2 armhf apt packages, so an
-armhf `.deb` only works on a system where ROS 2 was itself built from source for
-armhf.
-
-To build the packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
-Docker; see `packaging/` for the build and verification scripts).
-
 ## Middleware library dependency
 
 This package links against the closed-source **int2DDS FFI library**
@@ -91,11 +65,45 @@ This package links against the closed-source **int2DDS FFI library**
 artifact, verifies the selected library against the manifest, and exports the
 `int2dds_ffi::int2dds_ffi` CMake target used by this RMW package.
 
+## Binary install (.deb)
+
+Prebuilt packages let you skip `colcon build`. Download the two `.deb`s for your
+distro + architecture from the
+[Releases](https://github.com/IntellectusCorp/rmw_int2dds/releases) page, then:
+
+```bash
+sudo apt install ./ros-rolling-int2dds-ffi-vendor_*_amd64.deb \
+                 ./ros-rolling-rmw-int2dds-cpp_*_amd64.deb
+source /opt/ros/rolling/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+ros2 run demo_nodes_cpp talker
+```
+
+`apt install ./file.deb` installs the file and resolves its dependencies (the rmw
+package pulls in the vendor package automatically). The RMW library and its
+ament-index marker install into `/opt/ros/rolling/`, so once the environment is
+sourced only `RMW_IMPLEMENTATION` needs to be set.
+
+Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64**.
+**armhf** is best-effort - there are no official ROS 2 armhf apt packages, so an
+armhf `.deb` only works on a system where ROS 2 was itself built from source for
+armhf.
+
+To build the packages yourself: `packaging/build-deb.sh <distro> <arch>` (needs
+Docker; see `packaging/` for the build and verification scripts).
+
 ## Test status
 
 All results below were produced by running the listed suites directly; see
 `doc/` for methodology. Same-vendor and cross-vendor integration tests use the
 official ROS 2 repositories (`rmw_implementation`, `system_tests`).
+
+**Rolling has no column here on purpose.** The sources on this branch are
+lyrical's, and they build and pass this repository's own checks on
+`ros:rolling-ros-base` (rmw 7.11.1), but the upstream suites below have not been
+run against Rolling yet. Read the Lyrical column as the closest available
+evidence, not as a Rolling result - Rolling moves, and a number that was true
+when it was measured is not a claim about what Rolling is today.
 
 | Suite | Lyrical | Jazzy | Humble |
 |---|---|---|---|
@@ -165,7 +173,7 @@ verified against the per-test xunit/gtest XML results):
 - QoS mapping: [doc/qos_mapping.rst](rmw_int2dds_cpp/doc/qos_mapping.rst)
 - Security: [doc/security.rst](rmw_int2dds_cpp/doc/security.rst) — **note: DDS-Security / SROS 2 is not supported yet**
 - Examples: [examples/](rmw_int2dds_cpp/examples/)
-- API docs are published at `docs.ros.org/en/{humble,jazzy}/p/rmw_int2dds_cpp/` once released.
+- API docs are published at `docs.ros.org/en/{humble,jazzy,lyrical,rolling}/p/rmw_int2dds_cpp/` once released.
 
 ## Contributing
 

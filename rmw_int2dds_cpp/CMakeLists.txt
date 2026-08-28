@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.20)
 project(rmw_int2dds_cpp)
 
-# C++17 standard
-set(CMAKE_CXX_STANDARD 17)
+# C++20: platform minimum since ROS 2 Kilted (REP 2000); Jazzy toolchains accept it too.
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(
@@ -19,6 +19,10 @@ endif()
 
 # Find ROS2 dependencies
 find_package(ament_cmake REQUIRED)
+# The core package, not the ament_cmake_ros umbrella: the umbrella pulls in
+# rmw_test_fixture_implementation and closes a dependency cycle back through
+# rmw_implementation. Has to run before add_library().
+find_package(ament_cmake_ros_core REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(rmw REQUIRED)
 find_package(rosidl_runtime_c REQUIRED)
@@ -161,22 +165,22 @@ target_include_directories(rmw_int2dds_cpp PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(rmw_int2dds_cpp
+# ament_target_dependencies() was removed from ament_cmake in ROS 2 Lyrical
+# (ament_cmake 2.8.x no longer defines it), so link the namespaced targets
+# directly - they carry their own include directories and transitive deps.
+target_link_libraries(rmw_int2dds_cpp PUBLIC
   int2dds_ffi::int2dds_ffi
   rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
   ${PLATFORM_LIBS}
-)
-
-ament_target_dependencies(rmw_int2dds_cpp
-  rcutils
-  rmw
-  rosidl_runtime_c
-  rosidl_runtime_cpp
-  rosidl_typesupport_introspection_c
-  rosidl_typesupport_introspection_cpp
-  rosidl_typesupport_c
-  rosidl_typesupport_cpp
-  rmw_dds_common
+  rcutils::rcutils
+  rmw::rmw
+  rosidl_runtime_c::rosidl_runtime_c
+  rosidl_runtime_cpp::rosidl_runtime_cpp
+  rosidl_typesupport_introspection_c::rosidl_typesupport_introspection_c
+  rosidl_typesupport_introspection_cpp::rosidl_typesupport_introspection_cpp
+  rosidl_typesupport_c::rosidl_typesupport_c
+  rosidl_typesupport_cpp::rosidl_typesupport_cpp
+  rmw_dds_common::rmw_dds_common_library
 )
 
 # Configure as RMW library
@@ -201,28 +205,32 @@ target_link_libraries(test_connection int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
 if(RMW_INT2DDS_BUILD_MATCHED_EVENT_TESTS)
   add_executable(test_event_smoke test/test_event_smoke.cpp)
   target_include_directories(test_event_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_smoke rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
-  ament_target_dependencies(test_event_smoke
-    rcutils
-    rmw
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_smoke
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
 if(RMW_INT2DDS_BUILD_EVENT_VALIDATION)
   add_executable(test_event_validation test/test_event_validation.cpp)
   target_include_directories(test_event_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-  target_link_libraries(test_event_validation rmw_int2dds_cpp int2dds_ffi::int2dds_ffi ${PLATFORM_LIBS})
   # test_event_validation.cpp drives the rmw C API directly - it includes no
   # rclcpp header, so rclcpp was never a real dependency of this target.
-  ament_target_dependencies(test_event_validation
-    rcutils
-    rmw
-    rosidl_runtime_cpp
-    rosidl_typesupport_cpp
-    std_msgs
+  target_link_libraries(test_event_validation
+    rmw_int2dds_cpp
+    int2dds_ffi::int2dds_ffi
+    ${PLATFORM_LIBS}
+    rcutils::rcutils
+    rmw::rmw
+    rosidl_runtime_cpp::rosidl_runtime_cpp
+    rosidl_typesupport_cpp::rosidl_typesupport_cpp
+    ${std_msgs_TARGETS}
   )
 endif()
 
@@ -349,8 +357,9 @@ if(BUILD_TESTING)
       rmw_int2dds_cpp
       int2dds_ffi::int2dds_ffi
       ${PLATFORM_LIBS}
+      rmw::rmw
+      rcutils::rcutils
     )
-    ament_target_dependencies(test_rmw_wait_guards rmw rcutils)
     if(WIN32)
       add_custom_command(TARGET test_rmw_wait_guards POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -403,9 +412,9 @@ ament_export_dependencies(
   int2dds_ffi_vendor
   rcutils
   rmw
-  # Linked into the exported target, so a consumer of rmw_int2dds_cpp has to be
-  # able to resolve it. It happens to arrive transitively through rmw today; do
-  # not rely on that.
+  # Linked PUBLIC into the exported target above, so a consumer of
+  # rmw_int2dds_cpp::rmw_int2dds_cpp needs it resolved. It happens to arrive
+  # transitively through rmw today; do not rely on that.
   rosidl_dynamic_typesupport
   rosidl_runtime_c
   rosidl_runtime_cpp
