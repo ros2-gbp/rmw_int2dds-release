@@ -112,6 +112,81 @@ ament_target_dependencies(test_take_sequence
   rmw_int2dds_cpp
 )
 
+# ============================================================================
+# C3: dynamic message type support checks (Jazzy and newer)
+# ----------------------------------------------------------------------------
+# These live here rather than in rmw_int2dds_cpp because each one includes
+# rclcpp headers (serialization.hpp / serialized_message.hpp / rclcpp.hpp), and
+# an RMW implementation cannot depend on rclcpp - see the layering note above.
+#
+# Every dependency is REQUIRED, not probed QUIET. They used to be optional in
+# rmw_int2dds_cpp, which meant a build-farm job that did not install them just
+# dropped these targets and still reported success - so a released .deb could
+# ship with no dynamic message coverage at all and nothing would say so.
+# ============================================================================
+find_package(rosidl_dynamic_typesupport REQUIRED)
+find_package(rosidl_runtime_c REQUIRED)
+find_package(rosidl_typesupport_cpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
+find_package(test_msgs REQUIRED)
+find_package(int2dds_ffi_vendor REQUIRED)
+
+function(add_dynamic_check target)
+  add_executable(${target} test/${target}.cpp)
+  target_link_libraries(${target}
+    rclcpp::rclcpp
+    int2dds_ffi::int2dds_ffi
+    rosidl_dynamic_typesupport::rosidl_dynamic_typesupport
+    ${ARGN}
+  )
+  ament_target_dependencies(${target} rmw rcutils rmw_int2dds_cpp)
+endfunction()
+
+add_dynamic_check(test_dynamic_message
+  ${std_msgs_TARGETS} ${geometry_msgs_TARGETS} ${test_msgs_TARGETS}
+  ${diagnostic_msgs_TARGETS})
+add_dynamic_check(test_dynamic_fullflow ${test_msgs_TARGETS})
+add_dynamic_check(test_dynamic_take ${diagnostic_msgs_TARGETS})
+target_link_libraries(test_dynamic_take rcl::rcl)
+ament_target_dependencies(test_dynamic_fullflow rosidl_runtime_c rosidl_typesupport_cpp)
+
+# ============================================================================
+# Register the checks so `colcon test` runs them
+# ----------------------------------------------------------------------------
+# These are plain executables that report through their exit status, so ament
+# has to synthesise the passing result from the return code. Each gets its own
+# ROS_DOMAIN_ID; 71..78 belong to the checks in rmw_int2dds_cpp.
+# ============================================================================
+if(BUILD_TESTING)
+  find_package(ament_cmake_test REQUIRED)
+
+  function(add_validation_check target domain_id)
+    ament_add_test(${target}
+      COMMAND "$<TARGET_FILE:${target}>"
+      TIMEOUT 120
+      GENERATE_RESULT_FOR_RETURN_CODE_ZERO
+      ENV RMW_IMPLEMENTATION=rmw_int2dds_cpp ROS_DOMAIN_ID=${domain_id}
+    )
+  endfunction()
+
+  # colcon runs packages in parallel, so these must not share a domain with the
+  # checks in rmw_int2dds_cpp (71..78) either.
+  add_validation_check(test_take_sequence    81)
+  add_validation_check(test_dynamic_message  82)
+  add_validation_check(test_dynamic_fullflow 83)
+  add_validation_check(test_dynamic_take     84)
+
+  # These checks print "SKIP:" and still exit 0 when a message package is absent,
+  # so a missing dependency would read as a pass. Every find_package above is
+  # REQUIRED, which should make that unreachable; this catches it if one is ever
+  # relaxed. "BLOCKED-UPSTREAM" is deliberately not matched - that one reports a
+  # real rosidl limitation, not a gap in this package.
+  set_tests_properties(
+    test_dynamic_message test_dynamic_fullflow test_dynamic_take
+    PROPERTIES FAIL_REGULAR_EXPRESSION "SKIP:")
+endif()
+
 # NOTE: no ament_lint_auto here. validation/* was excluded from every linter in
 # rmw_int2dds_cpp (AMENT_LINT_AUTO_FILE_EXCLUDE), and these are the same files;
 # enabling lint now would fail on sources that have never been linted. Add it
