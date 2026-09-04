@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>rmw_int2dds_cpp</name>
-  <version>0.1.3</version>
+  <version>0.1.4</version>
   <description>
     ROS 2 middleware (RMW) implementation that binds the int2DDS DDS/RTPS
     middleware to the ROS 2 rmw interface.
@@ -19,7 +19,6 @@
   <author email="int2dds@int2.us">Intellectus Corp.</author>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>ament_cmake_ros_core</buildtool_depend>
 
   <!-- Core RMW interface and shared DDS utilities -->
   <depend>rmw</depend>
@@ -38,37 +37,24 @@
   <depend>rosidl_typesupport_c</depend>
   <depend>rosidl_typesupport_cpp</depend>
 
-  <!-- Backs rmw_take_dynamic_message and the serialization support vtable.
-       Present from Iron on, so it is a plain depend: probing it QUIET and leaving
-       it undeclared is how a build-farm .deb ends up without dynamic message
-       support and no error to show for it. -->
-  <depend>rosidl_dynamic_typesupport</depend>
-
-  <!-- Message type used by the event smoke/validation executables under test/.
-       The rclcpp-based probes and the dynamic message checks moved to
-       rmw_int2dds_validation, which is why rclcpp, rcl, geometry_msgs,
-       diagnostic_msgs and rclpy are no longer declared here. -->
+  <!-- Message type used by the event smoke/validation executables under test/ -->
   <depend>std_msgs</depend>
 
   <!-- Prebuilt int2DDS FFI library (downloaded + exported by the vendor pkg).
-       No version range: int2dds_ffi_vendor is released from this repository, and
-       catkin_prepare_release forces every package here to carry the same version.
-       A version_lt would therefore go unsatisfiable the moment the repo rolls to
-       the next minor, and it never guarded the FFI ABI anyway - the vendor package
-       version and INT2DDS_FFI_VERSION move independently. The FFI version is
+       int2dds_ffi_vendor lives in this repository, so bloom versions the two
+       packages in lockstep and a version range here would only ever compare a
+       package against itself. The FFI version that actually gets fetched is
        pinned in one place: INT2DDS_FFI_VERSION in int2dds_ffi_vendor/CMakeLists.txt. -->
   <depend>int2dds_ffi_vendor</depend>
 
   <!-- Lint / test. ament_cmake_cpplint and ament_cmake_flake8 come along with
        ament_lint_common, but CMakeLists.txt find_package()es them directly in
        order to call ament_cpplint()/ament_flake8() with explicit paths, so they
-       are declared rather than assumed. Same for ament_cmake_test, which
-       registers the standalone checks under test/. -->
+       are declared rather than assumed. -->
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>ament_cmake_cpplint</test_depend>
   <test_depend>ament_cmake_flake8</test_depend>
-  <test_depend>ament_cmake_test</test_depend>
   <test_depend>ament_cmake_gtest</test_depend>
 
   <!-- Mark this package as an RMW implementation so rmw_implementation builds it -->

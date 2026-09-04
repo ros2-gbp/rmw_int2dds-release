@@ -2,16 +2,53 @@
 Changelog for package rmw_int2dds_cpp
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+0.1.4 (2026-09-04)
+------------------
+* Build against int2DDS FFI 0.1.4, up from 0.1.3. The FFI declarations are
+  identical, so no call site changed.
+* No other source changes.
+* Contributors: Intellectus Corp.
+
 0.1.3 (2026-09-02)
 ------------------
 * Build against int2DDS FFI 0.1.3, up from 0.1.1. Every FFI entry point this
   package calls kept its signature; 0.1.3 only adds new ones (filtered
   discovery snapshots, an endpoint discovery callback, and a writer data
   representation query).
-* No other source changes.
+* Seed a large UDP socket buffer in ``rmw_init`` so high-rate / large-message
+  RELIABLE traffic no longer drops fragments.
+* Own ``EventData`` in the publisher/subscription entities and free it on
+  destroy, closing a per-event-type leak.
+* Keep discovery reading when a sample outgrows the buffer, so a large discovery
+  sample no longer blocks a participant.
+* Report subscription matched via a cached event.
+* Drop dead ``package.xml`` dependencies.
+* Correct the ``ament_lint`` test-status count in the README.
+* Poll the graph snapshot instead of waiting for it. ``kGraphSnapshotTimeout``
+  drops to 0: a read leaves the instance in place, so an endpoint that has not
+  arrived yet is picked up on the next pass and the 50 ms wait only burned the
+  timeout.
+* Honor ``ignore_local_publications`` in subscription readiness.
 * Contributors: Intellectus Corp.
 
 0.1.1 (2026-08-28)
+------------------
+* Shrink the initial subscription receive buffer to 64 KiB. It is held per
+  subscription and zeroed by ``resize()``, so 2 MiB went resident on every first
+  take; larger payloads still work through the existing grow-on-demand path.
+* Defer guard condition destruction until no wait set can reach it.
+* Include ``<utility>`` for ``std::move`` in the wait set registry.
+* Free the sample sequence when a take returns no data.
+* Poll for NOT_ALIVE endpoints instead of waiting for them.
+* Load the ``ament_cmake_ros`` buildtool dependency the package already declared.
+  Declaring without loading it set neither ``BUILD_SHARED_LIBS`` nor
+  ``ROS_PACKAGE_NAME``.
+* Add ``testing/check-dependency-cycle.py``, which replays the build farm's
+  release job sort over this checkout, next to the container test harness.
+* Run that check in CI on every push and pull request to this branch.
+* Contributors: Intellectus Corp.
+
+0.1.0 (2026-08-21)
 ------------------
 * Fix participant/context lifecycle: delete contained entities before the
   participant, release the participant when the last node is destroyed,
@@ -19,12 +56,10 @@ Changelog for package rmw_int2dds_cpp
   resources on init failure.
 * Apply requested QoS in services/clients; resolve BEST_AVAILABLE and
   SYSTEM_DEFAULT in the service actual QoS; apply deadline/liveliness.
-* Wire localhost-only and static-peer discovery into SPDP.
+* Wire localhost-only discovery into SPDP.
 * Reject STRICTLY_REQUIRED unique network flow endpoints; restore content-filter
   field codes; set error messages on unsupported API stubs; ignore only
   same-node local publications; randomize the GID process field.
-* Add dynamic message type support (rosidl dynamic typesupport): primitives,
-  string, fixed arrays, sequences and nested structs.
 * Batch ``take_sequence`` into a single serialized take.
 * Move development test executables into ``test/``; align QUALITY_DECLARATION
   and README test status with the current state.
@@ -36,6 +71,11 @@ Changelog for package rmw_int2dds_cpp
 * Add ``test_rmw_wait_guards``, the first automated test registered with CTest:
   guard condition readiness, trigger consumption, timeout handling and wake-up
   from another thread, all without a DDS participant.
+* Move the ``int2dds_ffi_vendor`` package into this repository. Building from
+  source no longer needs a second clone, and the dependency is declared without
+  a version range because the two packages are now released in lockstep; the
+  prebuilt FFI version stays pinned in one place, ``INT2DDS_FFI_VERSION`` in
+  ``int2dds_ffi_vendor/CMakeLists.txt``.
 * Cache wait set attachments across ``rmw_wait`` calls, rebuild them by delta
   instead of a full reset, and skip the event status mask update when it is
   already set.
@@ -57,61 +97,7 @@ Changelog for package rmw_int2dds_cpp
   13440 in ``rmw_init``, and document the loopback discovery env vars in the
   usage table.
 * Drop key/key_len from serialized write calls and bulk-copy fixed-width
-  primitive arrays in the CDR codec. The serialized write API lost those two
-  arguments upstream, so this package no longer compiled without the change; the
-  bulk copy was verified byte-identical to FastCDR for 1-, 2-, 4- and 8-byte
-  element sequences.
-* Keep the discovery listener reading when a sample outgrows its buffer. The
-  reader is KEEP_ALL, so retrying an oversized sample at the same size spun on it
-  forever and blocked every participant queued behind it.
-* Fail cleanly instead of writing through a null element when deserializing a
-  fixed primitive C array, matching the guard already on the serialize side.
-* Move ``int2dds_ffi_vendor`` into this repository. The standalone repository is
-  now a release host and carries no sources, so a clean checkout could not be
-  built without this.
-* Move the rclcpp-based QoS/perf probes and the dynamic message checks into the
-  new ``rmw_int2dds_validation`` package, and drop ``rclcpp``/``rcl`` from this
-  one. Depending on them closed the
-  ``rclcpp -> rcl -> rmw_implementation -> rmw_int2dds_cpp`` build cycle.
-* Declare every dependency ``CMakeLists.txt`` looks for, and require
-  ``rosidl_dynamic_typesupport`` rather than probing it quietly - an undeclared
-  optional dependency is how a build-farm job drops dynamic message support and
-  still reports success.
-* Decide the matched-event target from the installed rmw headers instead of
-  ``$ENV{ROS_DISTRO}``, which is only set where ``ros_environment`` is installed.
-* Register the standalone checks with CTest and add a build workflow, so
-  ``colcon test`` exercises the rmw C API and the FFI rather than linters alone.
-* Add ``INT2DDS_FFI_TARBALL`` to the vendor package, so a build can consume a
-  locally built FFI tarball instead of the published release asset - the release
-  tag alone does not identify the ABI.
-* Build on ROS 2 Rolling: C++20, and namespaced CMake targets instead of
-  ``ament_target_dependencies()``, which ament_cmake no longer defines
-  (removed in 2.8.x; Rolling ships 2.9.1).
-* Adapt to the post-Jazzy rmw API behind ``__has_include`` probes, so the same
-  sources still build on Lyrical, Jazzy and Humble: enclave string ownership through
-  ``rmw_enclave_options_copy``/``_fini``, no ``rmw_localhost_only_t``, no
-  ``RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE``, and ``RMW_RET_INVALID_ARGUMENT``
-  where the conformance suite previously expected ``RMW_RET_ERROR``.
-* Implement ``rmw_get_clients_info_by_service`` and
-  ``rmw_get_servers_info_by_service``, added in rmw 7.9.1, and publish the
-  service-level type hash the graph needs to answer them.
-* Delete a node's publisher DataWriters in ``rmw_destroy_node``. rclpy defers
-  publisher teardown from Lyrical on, so ``rmw_destroy_publisher`` may never run
-  before the participant is gone, orphaning each cycle's DataWriter history
-  cache.
-* Narrow the buildtool dependency from ``ament_cmake_ros`` to
-  ``ament_cmake_ros_core``. The umbrella package exec_depends on
-  ``rmw_test_fixture_implementation``, which build_depends on
-  ``rmw_implementation``, which group_depends back on this package. That cycle
-  broke release job generation for the whole distribution and reverted the
-  0.1.0 release.
-* Load ``ament_cmake_ros_core`` rather than only declaring it, so
-  ``BUILD_SHARED_LIBS`` and ``ROS_PACKAGE_NAME`` are actually set.
-* Raise ``cmake_minimum_required`` to 3.20, the platform minimum for this
-  distribution.
-* Add ``testing/check-dependency-cycle.py``, which replays the build farm's
-  release job sort over this checkout, next to the container test harness.
-* Run that check in CI on every push and pull request to this branch.
+  primitive arrays in the CDR codec.
 * Contributors: Intellectus Corp.
 
 0.0.1 (2026-06-25)
