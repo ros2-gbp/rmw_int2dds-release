@@ -1,3 +1,31 @@
+## rmw_int2dds (rolling) - 0.1.4-1
+
+The packages in the `rmw_int2dds` repository were released into the `rolling` distro by running `/usr/bin/bloom-release --new-track --rosdistro rolling --track rolling rmw_int2dds` on `Fri, 04 Sep 2026 08:52:27 -0000`
+
+These packages were released:
+- `int2dds_ffi_vendor`
+- `rmw_int2dds_cpp`
+
+These packages were explicitly ignored:
+- `rmw_int2dds_validation`
+
+Version of package(s) in repository `rmw_int2dds`:
+
+- upstream repository: https://github.com/IntellectusCorp/rmw_int2dds.git
+- release repository: https://github.com/ros2-gbp/rmw_int2dds-release.git
+- rosdistro version: `0.1.3-1`
+- old version: `0.1.3-1`
+- new version: `0.1.4-1`
+
+Versions of tools used:
+
+- bloom version: `0.14.3`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.1.0`
+- vcstools version: `0.1.42`
+
+
 ## rmw_int2dds (lyrical) - 0.1.4-1
 
 The packages in the `rmw_int2dds` repository were released into the `lyrical` distro by running `/usr/bin/bloom-release --new-track --rosdistro lyrical --track lyrical rmw_int2dds` on `Fri, 04 Sep 2026 08:51:05 -0000`
