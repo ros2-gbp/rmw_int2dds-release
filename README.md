@@ -1,3 +1,31 @@
+## rmw_int2dds (humble) - 0.1.4-2
+
+The packages in the `rmw_int2dds` repository were released into the `humble` distro by running `/usr/bin/bloom-release --rosdistro humble --track humble rmw_int2dds` on `Fri, 04 Sep 2026 08:44:12 -0000`
+
+These packages were released:
+- `int2dds_ffi_vendor`
+- `rmw_int2dds_cpp`
+
+These packages were explicitly ignored:
+- `rmw_int2dds_validation`
+
+Version of package(s) in repository `rmw_int2dds`:
+
+- upstream repository: https://github.com/IntellectusCorp/rmw_int2dds.git
+- release repository: https://github.com/ros2-gbp/rmw_int2dds-release.git
+- rosdistro version: `0.1.3-1`
+- old version: `0.1.4-1`
+- new version: `0.1.4-2`
+
+Versions of tools used:
+
+- bloom version: `0.14.3`
+- catkin_pkg version: `1.1.0`
+- rosdep version: `0.26.0`
+- rosdistro version: `1.1.0`
+- vcstools version: `0.1.42`
+
+
 ## rmw_int2dds (humble) - 0.1.4-1
 
 The packages in the `rmw_int2dds` repository were released into the `humble` distro by running `/usr/bin/bloom-release --new-track --rosdistro humble --track humble rmw_int2dds` on `Fri, 04 Sep 2026 08:28:31 -0000`
