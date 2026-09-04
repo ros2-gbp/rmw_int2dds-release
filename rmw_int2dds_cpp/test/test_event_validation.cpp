@@ -1,3 +1,17 @@
+// Copyright 2026 Int2DDS Project
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -18,7 +32,7 @@
 #include "rmw/rmw.h"
 #include "rmw/subscription_options.h"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/types.hpp"
 #include "rosidl_typesupport_cpp/message_type_support.hpp"
 #include "std_msgs/msg/string.hpp"
@@ -28,13 +42,6 @@
 #define RMW_INT2DDS_HAS_MATCHED_EVENT_API 1
 #else
 #define RMW_INT2DDS_HAS_MATCHED_EVENT_API 0
-#endif
-
-#if __has_include("rmw/events_statuses/incompatible_type.h")
-#include "rmw/events_statuses/incompatible_type.h"
-#define RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT_API 1
-#else
-#define RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT_API 0
 #endif
 
 namespace
@@ -149,9 +156,13 @@ cleanup_context(TestContext & ctx)
 }
 
 bool
-init_context(TestContext & ctx, const char * publisher_node_name, const char * subscription_node_name)
+init_context(
+  TestContext & ctx, const char * publisher_node_name,
+  const char * subscription_node_name)
 {
-  if (!check_ret(rmw_init_options_init(&ctx.init_options, ctx.allocator), "rmw_init_options_init")) {
+  if (!check_ret(rmw_init_options_init(&ctx.init_options, ctx.allocator),
+      "rmw_init_options_init"))
+  {
     return false;
   }
 
@@ -366,7 +377,8 @@ wait_for_publication_matched(TestContext & ctx, const char * label)
     label);
 #else
   (void)ctx;
-  std::cerr << "[ERROR] " << label << ": matched events are not available in this rmw API" << std::endl;
+  std::cerr << "[ERROR] " << label << ": matched events are not available in this rmw API" <<
+    std::endl;
   return false;
 #endif
 }
@@ -400,10 +412,8 @@ test_support_matrix()
     {RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE, true, "RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE"},
     {RMW_EVENT_LIVELINESS_CHANGED, true, "RMW_EVENT_LIVELINESS_CHANGED"},
     {RMW_EVENT_MESSAGE_LOST, true, "RMW_EVENT_MESSAGE_LOST"},
-#if RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT_API
     {RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE, true, "RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE"},
     {RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE, true, "RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE"},
-#endif
   };
 
   for (const auto & check : checks) {
@@ -418,7 +428,8 @@ test_support_matrix()
   std::cout << "[OK] support matrix validation passed" << std::endl;
   return true;
 #else
-  std::cout << "[INFO] support matrix validation skipped: matched-event support query is not available"
+  std::cout <<
+    "[INFO] support matrix validation skipped: matched-event support query is not available"
             << std::endl;
   return true;
 #endif
@@ -434,7 +445,9 @@ test_init_and_callback_smoke()
 
   const std::string topic_name = "/event_validation_init";
   const rmw_qos_profile_t default_qos = rmw_qos_profile_default;
-  if (!create_publisher(ctx, topic_name, default_qos) || !create_subscription(ctx, topic_name, default_qos)) {
+  if (!create_publisher(ctx, topic_name, default_qos) || !create_subscription(ctx, topic_name,
+      default_qos))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -459,7 +472,9 @@ test_init_and_callback_smoke()
 
   for (rmw_event_type_t event_type : publisher_events) {
     rmw_event_t event = rmw_get_zero_initialized_event();
-    if (!check_ret(rmw_publisher_event_init(&event, ctx.publisher, event_type), "publisher_event_init")) {
+    if (!check_ret(rmw_publisher_event_init(&event, ctx.publisher, event_type),
+        "publisher_event_init"))
+    {
       cleanup_context(ctx);
       return false;
     }
@@ -470,7 +485,9 @@ test_init_and_callback_smoke()
       cleanup_context(ctx);
       return false;
     }
-    if (!check_ret(rmw_event_set_callback(&event, nullptr, nullptr), "rmw_event_set_callback(clear)")) {
+    if (!check_ret(rmw_event_set_callback(&event, nullptr, nullptr),
+        "rmw_event_set_callback(clear)"))
+    {
       cleanup_context(ctx);
       return false;
     }
@@ -493,7 +510,9 @@ test_init_and_callback_smoke()
       cleanup_context(ctx);
       return false;
     }
-    if (!check_ret(rmw_event_set_callback(&event, nullptr, nullptr), "rmw_event_set_callback(clear)")) {
+    if (!check_ret(rmw_event_set_callback(&event, nullptr, nullptr),
+        "rmw_event_set_callback(clear)"))
+    {
       cleanup_context(ctx);
       return false;
     }
@@ -507,7 +526,8 @@ test_init_and_callback_smoke()
         rmw_publisher_event_init(
           &unsupported_publisher_event, ctx.publisher, RMW_EVENT_LIVELINESS_CHANGED),
         RMW_RET_UNSUPPORTED,
-        "publisher unsupported event")) {
+        "publisher unsupported event"))
+    {
       cleanup_context(ctx);
       return false;
     }
@@ -516,6 +536,118 @@ test_init_and_callback_smoke()
 
   cleanup_context(ctx);
   std::cout << "[OK] init/callback validation passed" << std::endl;
+  return true;
+}
+
+/// A status condition recreated after the reader handle is dropped must still be
+/// narrowed to the statuses the RMW actually wants.
+///
+/// int2dds_*_get_statuscondition hands out a brand-new StatusCondition with
+/// every status enabled - measured directly: 0x7FFF. The mask, though, belongs
+/// to the DDS entity and not to the handle, so once one of the creating paths
+/// has narrowed it, a later handle for the same entity sees the narrow mask.
+/// refresh_event_status_condition is the one creating path that does not reset
+/// the mask itself, and this is what pins the fact that it does not have to:
+/// rmw_subscription_event_init has always narrowed the entity first, so the
+/// early return ((enabled & wanted) == wanted) can never latch a wide-open mask.
+///
+/// Remove the reset from ensure_subscription_status_condition and this check
+/// fails with enabled_mask=0x7FFF - verified, so the guard is real rather than
+/// decorative.
+///
+/// The null-and-recreate below is exactly what
+/// destroy_subscription_reader_entities does to the handle.
+bool
+test_recreated_event_status_condition_mask()
+{
+  TestContext ctx;
+  if (!init_context(ctx, "recreated_mask_pub_node", "recreated_mask_sub_node")) {
+    return false;
+  }
+
+  const std::string topic_name = "/event_validation_recreated_mask";
+  const rmw_qos_profile_t default_qos = rmw_qos_profile_default;
+  if (!create_subscription(ctx, topic_name, default_qos)) {
+    cleanup_context(ctx);
+    return false;
+  }
+
+  rmw_event_t event = rmw_get_zero_initialized_event();
+  if (!check_ret(
+      rmw_subscription_event_init(&event, ctx.subscription, RMW_EVENT_MESSAGE_LOST),
+      "rmw_subscription_event_init(recreated_mask)"))
+  {
+    cleanup_context(ctx);
+    return false;
+  }
+
+  auto * sub_data = static_cast<rmw_int2dds_cpp::SubscriptionData *>(ctx.subscription->data);
+  if (sub_data == nullptr || sub_data->status_condition == nullptr) {
+    std::cerr << "[ERROR] recreated_mask: event has no status condition to begin with"
+              << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  // Drop the handle the way a content-filter update does.
+  int2dds_statuscondition_delete(sub_data->status_condition);
+  sub_data->status_condition = nullptr;
+
+  // One wait with a real timeout: a zero timeout short-circuits before the
+  // attach pass, and it is the attach pass that recreates the handle.
+  void * event_entries[1] = {&event};
+  rmw_events_t events{1, event_entries};
+  rmw_time_t timeout{0, 100u * 1000u * 1000u};
+  const rmw_ret_t wait_ret =
+    rmw_wait(nullptr, nullptr, nullptr, nullptr, &events, ctx.wait_set, &timeout);
+  if (wait_ret != RMW_RET_OK && wait_ret != RMW_RET_TIMEOUT) {
+    std::cerr << "[ERROR] recreated_mask: rmw_wait returned " << wait_ret << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  if (sub_data->status_condition == nullptr) {
+    std::cerr << "[ERROR] recreated_mask: the status condition was not recreated" << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  uint32_t enabled_mask = 0;
+  const Int2DdsRet ret = int2dds_statuscondition_get_enabled_statuses(
+    sub_data->status_condition, &enabled_mask);
+  if (ret != INT2DDS_RET_OK) {
+    std::cerr << "[ERROR] recreated_mask: failed to query the mask ret=" << ret << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  // Only the event's own status was asked for; the subscription itself was not
+  // part of the wait, so DATA_AVAILABLE is not expected either.
+  const uint32_t expected = static_cast<uint32_t>(INT2DDS_STATUS_SAMPLE_LOST);
+  if ((enabled_mask & ~expected) != 0) {
+    std::cerr << "[ERROR] recreated_mask: the recreated status condition is wider than asked for"
+              << " enabled_mask=0x" << std::hex << enabled_mask
+              << " expected=0x" << expected << std::dec << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+  if ((enabled_mask & expected) != expected) {
+    std::cerr << "[ERROR] recreated_mask: the recreated status condition lost SAMPLE_LOST"
+              << " enabled_mask=0x" << std::hex << enabled_mask << std::dec << std::endl;
+    ignore_ret(rmw_event_fini(&event));
+    cleanup_context(ctx);
+    return false;
+  }
+
+  ignore_ret(rmw_event_fini(&event));
+  cleanup_context(ctx);
+  std::cout << "[OK] recreated event status condition mask validation passed"
+            << " enabled_mask=0x" << std::hex << enabled_mask << std::dec << std::endl;
   return true;
 }
 
@@ -650,7 +782,8 @@ test_subscription_matched_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_subscription_event_init(&event, ctx.subscription, RMW_EVENT_SUBSCRIPTION_MATCHED),
-      "rmw_subscription_event_init(subscription_matched)")) {
+      "rmw_subscription_event_init(subscription_matched)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -683,7 +816,8 @@ test_subscription_matched_runtime()
   cleanup_context(ctx);
   return success;
 #else
-  std::cout << "[INFO] subscription matched runtime validation skipped: matched events are not available"
+  std::cout <<
+    "[INFO] subscription matched runtime validation skipped: matched events are not available"
             << std::endl;
   return true;
 #endif
@@ -708,7 +842,8 @@ test_publication_matched_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_publisher_event_init(&event, ctx.publisher, RMW_EVENT_PUBLICATION_MATCHED),
-      "rmw_publisher_event_init(publication_matched)")) {
+      "rmw_publisher_event_init(publication_matched)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -741,7 +876,8 @@ test_publication_matched_runtime()
   cleanup_context(ctx);
   return success;
 #else
-  std::cout << "[INFO] publication matched runtime validation skipped: matched events are not available"
+  std::cout <<
+    "[INFO] publication matched runtime validation skipped: matched events are not available"
             << std::endl;
   return true;
 #endif
@@ -769,7 +905,8 @@ test_requested_incompatible_qos_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_subscription_event_init(&event, ctx.subscription, RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE),
-      "rmw_subscription_event_init(requested_qos_incompatible)")) {
+      "rmw_subscription_event_init(requested_qos_incompatible)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -823,7 +960,8 @@ test_offered_incompatible_qos_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_publisher_event_init(&event, ctx.publisher, RMW_EVENT_OFFERED_QOS_INCOMPATIBLE),
-      "rmw_publisher_event_init(offered_qos_incompatible)")) {
+      "rmw_publisher_event_init(offered_qos_incompatible)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -880,7 +1018,8 @@ test_requested_deadline_missed_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_subscription_event_init(&event, ctx.subscription, RMW_EVENT_REQUESTED_DEADLINE_MISSED),
-      "rmw_subscription_event_init(requested_deadline_missed)")) {
+      "rmw_subscription_event_init(requested_deadline_missed)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -930,7 +1069,8 @@ test_offered_deadline_missed_runtime()
   rmw_event_t event = rmw_get_zero_initialized_event();
   if (!check_ret(
       rmw_publisher_event_init(&event, ctx.publisher, RMW_EVENT_OFFERED_DEADLINE_MISSED),
-      "rmw_publisher_event_init(offered_deadline_missed)")) {
+      "rmw_publisher_event_init(offered_deadline_missed)"))
+  {
     cleanup_context(ctx);
     return false;
   }
@@ -979,6 +1119,7 @@ main()
     test_support_matrix() &&
     test_init_and_callback_smoke() &&
     test_message_lost_status_condition_mask() &&
+    test_recreated_event_status_condition_mask() &&
     test_message_lost_take_no_event() &&
     test_subscription_matched_runtime() &&
     test_publication_matched_runtime() &&
@@ -993,6 +1134,7 @@ main()
   }
 
   std::cout << "[OK] event validation suite passed" << std::endl;
-  std::cout << "[INFO] liveliness events are covered by support/init/callback validation only" << std::endl;
+  std::cout << "[INFO] liveliness events are covered by support/init/callback validation only" <<
+    std::endl;
   return EXIT_SUCCESS;
 }

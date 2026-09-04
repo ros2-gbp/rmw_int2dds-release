@@ -28,7 +28,7 @@
 #include "rosidl_typesupport_introspection_c/identifier.h"
 #include "rosidl_typesupport_introspection_cpp/identifier.hpp"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "../wait/waitset_registry.hpp"  // NOLINT(build/include)
@@ -36,7 +36,6 @@
 #include "../graph/graph_guard.hpp"
 #include "../graph/discovery.hpp"
 #include "../common/type_hash_qos.hpp"
-
 // Forward declarations from common utilities
 namespace rmw_int2dds_cpp
 {
@@ -257,7 +256,6 @@ set_reader_reliability_durability(
 
 extern "C"
 {
-
 rmw_service_t *
 rmw_create_service(
   const rmw_node_t * node,
@@ -463,28 +461,31 @@ rmw_create_service(
 
   // Listener starts with an empty mask; refreshed when user callbacks register
   rmw_int2dds_cpp::refresh_service_listener(srv_data);
+
+  // Notify graph-change waiters that this service was added.
   rmw_int2dds_cpp::trigger_graph_guard_condition(context_data);
 
+  // Standard rmw_dds_common graph: a service is a request reader + a response
+  // writer. Register both entities (keyed by their DDS GUIDs) and associate them
+  // with the node via add_service_graph, which announces over ros_discovery_info.
   if (context_data->common) {
     rmw_gid_t request_reader_gid{};
     rmw_gid_t response_writer_gid{};
     uint8_t guid[16];
     if (int2dds_datareader_get_guid(srv_data->request_reader, &guid) == INT2DDS_RET_OK) {
-      std::memcpy(request_reader_gid.data, guid, sizeof(guid));
+      std::memcpy(request_reader_gid.data, guid, RMW_GID_STORAGE_SIZE);
     }
     if (int2dds_datawriter_get_guid(srv_data->response_writer, &guid) == INT2DDS_RET_OK) {
-      std::memcpy(response_writer_gid.data, guid, sizeof(guid));
+      std::memcpy(response_writer_gid.data, guid, RMW_GID_STORAGE_SIZE);
     }
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, request_reader_gid, request_topic_name, request_type_name,
-      srv_data->qos, /*is_reader=*/ true);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/true);
     rmw_int2dds_cpp::common_add_local_entity(
       context_data, response_writer_gid, response_topic_name, response_type_name,
-      srv_data->qos, /*is_reader=*/ false);
-    rmw_int2dds_cpp::common_associate_local_reader(
-      context_data, request_reader_gid, node_data->name, node_data->namespace_);
-    rmw_int2dds_cpp::common_associate_local_writer(
-      context_data, response_writer_gid, node_data->name, node_data->namespace_);
+      rosidl_type_hash_t{}, srv_data->qos, /*is_reader=*/false);
+    context_data->common->add_service_graph(
+      request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
   }
 
   return service;
@@ -538,28 +539,29 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
         live_services.end());
     }
 
+    // Notify graph-change waiters that this service was removed.
     if (node_data->context_data != nullptr) {
       rmw_int2dds_cpp::trigger_graph_guard_condition(node_data->context_data);
     }
 
+    // Standard rmw_dds_common graph: withdraw the request-reader + response-writer
+    // entities and the node association (endpoints are still alive here).
     if (node_data->context_data != nullptr && node_data->context_data->common) {
       rmw_gid_t request_reader_gid{};
       rmw_gid_t response_writer_gid{};
       uint8_t guid[16];
       if (int2dds_datareader_get_guid(srv_data->request_reader, &guid) == INT2DDS_RET_OK) {
-        std::memcpy(request_reader_gid.data, guid, sizeof(guid));
+        std::memcpy(request_reader_gid.data, guid, RMW_GID_STORAGE_SIZE);
       }
       if (int2dds_datawriter_get_guid(srv_data->response_writer, &guid) == INT2DDS_RET_OK) {
-        std::memcpy(response_writer_gid.data, guid, sizeof(guid));
+        std::memcpy(response_writer_gid.data, guid, RMW_GID_STORAGE_SIZE);
       }
-      rmw_int2dds_cpp::common_dissociate_local_reader(
-        node_data->context_data, request_reader_gid, node_data->name, node_data->namespace_);
-      rmw_int2dds_cpp::common_dissociate_local_writer(
-        node_data->context_data, response_writer_gid, node_data->name, node_data->namespace_);
+      node_data->context_data->common->remove_service_graph(
+        request_reader_gid, response_writer_gid, node_data->name, node_data->namespace_);
       rmw_int2dds_cpp::common_remove_local_entity(
-        node_data->context_data, request_reader_gid, /*is_reader=*/ true);
+        node_data->context_data, request_reader_gid, /*is_reader=*/true);
       rmw_int2dds_cpp::common_remove_local_entity(
-        node_data->context_data, response_writer_gid, /*is_reader=*/ false);
+        node_data->context_data, response_writer_gid, /*is_reader=*/false);
     }
 
     // Delete DDS entities
@@ -581,8 +583,8 @@ rmw_destroy_service(rmw_node_t * node, rmw_service_t * service)
       int2dds_delete_topic(srv_data->request_topic);
     }
   } else {
-    // The detach path already released and nulled the reader/writer/topics but
-    // left request_status_condition live and srv_data still referenced by any
+    // The detach path released and nulled the reader/writer/topics but left
+    // request_status_condition live and srv_data still referenced by any
     // wait-set cache. Clean the caches and release the condition before srv_data
     // is freed (no double free: the detach path never touched the condition).
     rmw_int2dds_cpp::waitset_registry_clean_caches();
@@ -728,5 +730,4 @@ rmw_service_set_on_new_request_callback(
   rmw_int2dds_cpp::refresh_service_listener(srv_data);
   return RMW_RET_OK;
 }
-
 }  // extern "C"
