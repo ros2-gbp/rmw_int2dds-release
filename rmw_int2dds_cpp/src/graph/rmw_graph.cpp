@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <array>
 #include <tuple>
 #include <cstring>
 #include <algorithm>
@@ -42,6 +41,8 @@
 
 #include "rcutils/allocator.h"
 #include "rcutils/strdup.h"
+
+#include "rmw_dds_common/qos.hpp"
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
@@ -112,10 +113,7 @@ static std::string demangle_dds_service_type_name(const std::string & type_name)
   return demangled;
 }
 
-// Snapshots are polled, not awaited: a read leaves the instance in place, so one that has
-// not arrived yet is picked up on the next pass. Waiting only burned the timeout.
 constexpr std::chrono::milliseconds kGraphSnapshotTimeout{0};
-constexpr std::chrono::milliseconds kDepartureSnapshotTimeout{0};
 
 static bool is_service_request_topic(const std::string & topic_name)
 {
@@ -148,7 +146,7 @@ static std::array<uint8_t, 12> participant_key_from_endpoint_guid(
 }
 
 static bool read_publication_string(
-  Int2DdsRet (* fn)(const Int2DdsPublicationBuiltinTopicData *, uint8_t *, uintptr_t, uintptr_t *),
+  Int2DdsRet (*fn)(const Int2DdsPublicationBuiltinTopicData *, uint8_t *, uintptr_t, uintptr_t *),
   const Int2DdsPublicationBuiltinTopicData * data,
   std::string * out)
 {
@@ -165,7 +163,7 @@ static bool read_publication_string(
 }
 
 static bool read_subscription_string(
-  Int2DdsRet (* fn)(const Int2DdsSubscriptionBuiltinTopicData *, uint8_t *, uintptr_t, uintptr_t *),
+  Int2DdsRet (*fn)(const Int2DdsSubscriptionBuiltinTopicData *, uint8_t *, uintptr_t, uintptr_t *),
   const Int2DdsSubscriptionBuiltinTopicData * data,
   std::string * out)
 {
@@ -383,6 +381,45 @@ static rmw_qos_profile_t build_remote_qos(
   return qos;
 }
 
+// Reads an endpoint's USER_DATA via the given getter and parses the rosidl type hash
+// ("typehash=...;") that rmw_publisher/rmw_subscription encoded at creation, so
+// get_*_info_by_topic reports the real type hash instead of a zero (INVALID) value.
+// Returns a zero hash when no typehash key is present.
+template<typename DataT>
+static rosidl_type_hash_t read_endpoint_type_hash(
+  DataT * data,
+  Int2DdsRet (* get_user_data)(const DataT *, uint8_t *, uintptr_t, uintptr_t *))
+{
+  rosidl_type_hash_t type_hash{};
+  uintptr_t size = 0;
+  if (get_user_data(data, nullptr, 0, &size) != INT2DDS_RET_OK || size == 0) {
+    return type_hash;
+  }
+  std::vector<uint8_t> buf(size);
+  if (get_user_data(data, buf.data(), buf.size(), &size) != INT2DDS_RET_OK) {
+    return type_hash;
+  }
+  // Isolate the single "typehash=<value>;" pair before handing it to the standard
+  // parser: the user_data may carry other pairs and trailing padding that the
+  // rmw_dds_common parser does not tolerate.
+  const std::string ud(reinterpret_cast<const char *>(buf.data()), size);
+  const std::string key = "typehash=";
+  const auto pos = ud.find(key);
+  if (pos == std::string::npos) {
+    return type_hash;
+  }
+  const auto semi = ud.find(';', pos);
+  const std::string pair = (semi == std::string::npos) ?
+    (ud.substr(pos) + ';') : ud.substr(pos, semi - pos + 1);
+  rmw_dds_common::parse_type_hash_from_user_data(
+    reinterpret_cast<const uint8_t *>(pair.data()), pair.size(), type_hash);
+  return type_hash;
+}
+
+// ros_discovery_info joins with the topic/type recorded here. Reconciles against
+// ContextData::synced_remote_entities so endpoints that have departed are removed.
+// Local endpoints are registered separately by the create/destroy hooks; the
+// ros_discovery_info topic itself is skipped.
 // Reads each discovered remote participant's USER_DATA ("enclave=<value>;") and registers
 // its enclave in the GraphCache so get_node_names_with_enclaves reports the real enclave
 // instead of "". The gid is the participant key, matching the per-endpoint participant_gid
@@ -441,10 +478,6 @@ static void sync_remote_participant_enclaves(rmw_int2dds_cpp::ContextData * cont
   }
 }
 
-// ros_discovery_info joins with the topic/type recorded here. Reconciles against
-// ContextData::synced_remote_entities so endpoints that have departed are removed.
-// Local endpoints are registered separately by the create/destroy hooks; the
-// ros_discovery_info topic itself is skipped.
 static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * context_data)
 {
   if (context_data == nullptr || !context_data->common) {
@@ -469,6 +502,7 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     bool is_reader;
     std::array<uint8_t, 12> participant_key;
     rmw_qos_profile_t qos;
+    rosidl_type_hash_t type_hash;
   };
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, RemoteEntity> current;
 
@@ -477,7 +511,7 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     [&](Int2DdsPublicationBuiltinTopicData * publication) {
       std::array<uint8_t, 16> endpoint_guid = {};
       if (int2dds_publication_builtin_topic_data_get_endpoint_guid(
-        publication, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) != INT2DDS_RET_OK)
+          publication, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) != INT2DDS_RET_OK)
       {
         return;
       }
@@ -493,9 +527,9 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
       std::string topic_name;
       std::string type_name;
       if (!read_publication_string(
-        int2dds_publication_builtin_topic_data_get_topic_name, publication, &topic_name) ||
+          int2dds_publication_builtin_topic_data_get_topic_name, publication, &topic_name) ||
       !read_publication_string(
-        int2dds_publication_builtin_topic_data_get_type_name, publication, &type_name))
+          int2dds_publication_builtin_topic_data_get_type_name, publication, &type_name))
       {
         return;
       }
@@ -503,33 +537,28 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
         return;
       }
       std::array<uint8_t, RMW_GID_STORAGE_SIZE> key = {};
-      std::memcpy(key.data(), endpoint_guid.data(), endpoint_guid.size());
+      std::memcpy(key.data(), endpoint_guid.data(), RMW_GID_STORAGE_SIZE);
       int32_t reliability_kind = 1;
       int32_t durability_kind = 0;
       int32_t liveliness_kind = 0;
-      int32_t lease_sec = 0x7fffffff;
-      int32_t deadline_sec = 0x7fffffff;
-      int32_t lifespan_sec = 0x7fffffff;
-      uint32_t lease_nsec = 0x7fffffffu;
-      uint32_t deadline_nsec = 0x7fffffffu;
-      uint32_t lifespan_nsec = 0x7fffffffu;
-      int2dds_publication_builtin_topic_data_get_reliability_kind(
-        publication, &reliability_kind);
-      int2dds_publication_builtin_topic_data_get_durability_kind(
-        publication, &durability_kind);
-      int2dds_publication_builtin_topic_data_get_liveliness_kind(
-        publication, &liveliness_kind);
+      int32_t lease_sec = 0x7fffffff, deadline_sec = 0x7fffffff, lifespan_sec = 0x7fffffff;
+      uint32_t lease_nsec = 0x7fffffffu, deadline_nsec = 0x7fffffffu, lifespan_nsec = 0x7fffffffu;
+      int2dds_publication_builtin_topic_data_get_reliability_kind(publication, &reliability_kind);
+      int2dds_publication_builtin_topic_data_get_durability_kind(publication, &durability_kind);
+      int2dds_publication_builtin_topic_data_get_liveliness_kind(publication, &liveliness_kind);
       int2dds_publication_builtin_topic_data_get_liveliness_lease_duration(
         publication, &lease_sec, &lease_nsec);
-      int2dds_publication_builtin_topic_data_get_deadline(
-        publication, &deadline_sec, &deadline_nsec);
-      int2dds_publication_builtin_topic_data_get_lifespan(
-        publication, &lifespan_sec, &lifespan_nsec);
+      int2dds_publication_builtin_topic_data_get_deadline(publication, &deadline_sec,
+      &deadline_nsec);
+      int2dds_publication_builtin_topic_data_get_lifespan(publication, &lifespan_sec,
+      &lifespan_nsec);
       current[key] = RemoteEntity{
         topic_name, type_name, false, effective_key,
         build_remote_qos(
           reliability_kind, durability_kind, liveliness_kind, lease_sec, lease_nsec,
-          deadline_sec, deadline_nsec, lifespan_sec, lifespan_nsec)};
+          deadline_sec, deadline_nsec, lifespan_sec, lifespan_nsec),
+        read_endpoint_type_hash(
+          publication, int2dds_publication_builtin_topic_data_get_user_data)};
     });
 
   for_each_subscription_snapshot(
@@ -537,7 +566,7 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     [&](Int2DdsSubscriptionBuiltinTopicData * subscription) {
       std::array<uint8_t, 16> endpoint_guid = {};
       if (int2dds_subscription_builtin_topic_data_get_endpoint_guid(
-        subscription, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) != INT2DDS_RET_OK)
+          subscription, reinterpret_cast<uint8_t(*)[16]>(&endpoint_guid)) != INT2DDS_RET_OK)
       {
         return;
       }
@@ -554,9 +583,9 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
       std::string topic_name;
       std::string type_name;
       if (!read_subscription_string(
-        int2dds_subscription_builtin_topic_data_get_topic_name, subscription, &topic_name) ||
+          int2dds_subscription_builtin_topic_data_get_topic_name, subscription, &topic_name) ||
       !read_subscription_string(
-        int2dds_subscription_builtin_topic_data_get_type_name, subscription, &type_name))
+          int2dds_subscription_builtin_topic_data_get_type_name, subscription, &type_name))
       {
         return;
       }
@@ -564,20 +593,15 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
         return;
       }
       std::array<uint8_t, RMW_GID_STORAGE_SIZE> key = {};
-      std::memcpy(key.data(), endpoint_guid.data(), endpoint_guid.size());
+      std::memcpy(key.data(), endpoint_guid.data(), RMW_GID_STORAGE_SIZE);
       int32_t reliability_kind = 1;
       int32_t durability_kind = 0;
       int32_t liveliness_kind = 0;
-      int32_t lease_sec = 0x7fffffff;
-      int32_t deadline_sec = 0x7fffffff;
-      uint32_t lease_nsec = 0x7fffffffu;
-      uint32_t deadline_nsec = 0x7fffffffu;
-      int2dds_subscription_builtin_topic_data_get_reliability_kind(
-        subscription, &reliability_kind);
-      int2dds_subscription_builtin_topic_data_get_durability_kind(
-        subscription, &durability_kind);
-      int2dds_subscription_builtin_topic_data_get_liveliness_kind(
-        subscription, &liveliness_kind);
+      int32_t lease_sec = 0x7fffffff, deadline_sec = 0x7fffffff;
+      uint32_t lease_nsec = 0x7fffffffu, deadline_nsec = 0x7fffffffu;
+      int2dds_subscription_builtin_topic_data_get_reliability_kind(subscription, &reliability_kind);
+      int2dds_subscription_builtin_topic_data_get_durability_kind(subscription, &durability_kind);
+      int2dds_subscription_builtin_topic_data_get_liveliness_kind(subscription, &liveliness_kind);
       int2dds_subscription_builtin_topic_data_get_liveliness_lease_duration(
         subscription, &lease_sec, &lease_nsec);
       int2dds_subscription_builtin_topic_data_get_deadline(
@@ -587,7 +611,9 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
         topic_name, type_name, true, effective_key,
         build_remote_qos(
           reliability_kind, durability_kind, liveliness_kind, lease_sec, lease_nsec,
-          deadline_sec, deadline_nsec, 0x7fffffff, 0x7fffffffu)};
+          deadline_sec, deadline_nsec, 0x7fffffff, 0x7fffffffu),
+        read_endpoint_type_hash(
+          subscription, int2dds_subscription_builtin_topic_data_get_user_data)};
     });
 
   // Departures come from DDS saying so, never from absence in the pass above.
@@ -599,12 +625,12 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
   // node going together, to be rediscovered moments later.
   std::vector<std::pair<std::array<uint8_t, 16>, bool>> gone;
   for (const auto & guid : collect_departed_publications(
-      context_data, static_cast<int>(kDepartureSnapshotTimeout.count())))
+      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
   {
     gone.emplace_back(guid, false);
   }
   for (const auto & guid : collect_departed_subscriptions(
-      context_data, static_cast<int>(kDepartureSnapshotTimeout.count())))
+      context_data, static_cast<int>(kGraphSnapshotTimeout.count())))
   {
     gone.emplace_back(guid, true);
   }
@@ -632,10 +658,14 @@ static void sync_remote_entities_to_common(rmw_int2dds_cpp::ContextData * contex
     }
     rmw_gid_t gid = {};
     std::memcpy(gid.data, entry.first.data(), RMW_GID_STORAGE_SIZE);
+    // Real participant key (GUID prefix) so rmw_dds_common associates this endpoint with
+    // the node that owns it (get_*_info_by_topic / by_node). Matches the participant gid
+    // published in ros_discovery_info (also the GUID prefix); an empty value here left
+    // every discovered endpoint reported as _CREATED_BY_BARE_DDS_APP_.
     rmw_gid_t participant_gid = {};
     std::memcpy(participant_gid.data, entry.second.participant_key.data(), 12);
     context_data->common->graph_cache.add_entity(
-      gid, entry.second.topic_name, entry.second.type_name,
+      gid, entry.second.topic_name, entry.second.type_name, entry.second.type_hash,
       participant_gid, entry.second.qos, entry.second.is_reader);
     synced[entry.first] = entry.second.is_reader;
   }
@@ -750,8 +780,15 @@ extern "C" void rmw_int2dds_endpoint_discovery_cb(
     std::memcpy(gid.data, key.data(), RMW_GID_STORAGE_SIZE);
     rmw_gid_t participant_gid = {};
     std::memcpy(participant_gid.data, effective_key.data(), 12);
+    // Jazzy's GraphCache takes the type hash; the overload without it is
+    // deprecated and would register this endpoint as RIHS01_0000... The push
+    // callback wins the dedup race against sync_remote_entities_to_common, so
+    // dropping the hash here would make it permanent.
     context_data->common->graph_cache.add_entity(
-      gid, topic_name, type_name, participant_gid, qos, false);
+      gid, topic_name, type_name,
+      read_endpoint_type_hash(
+        publication, int2dds_publication_builtin_topic_data_get_user_data),
+      participant_gid, qos, false);
     synced[key] = false;
     return;
   }
@@ -824,7 +861,10 @@ extern "C" void rmw_int2dds_endpoint_discovery_cb(
     rmw_gid_t participant_gid = {};
     std::memcpy(participant_gid.data, effective_key.data(), 12);
     context_data->common->graph_cache.add_entity(
-      gid, topic_name, type_name, participant_gid, qos, true);
+      gid, topic_name, type_name,
+      read_endpoint_type_hash(
+        subscription, int2dds_subscription_builtin_topic_data_get_user_data),
+      participant_gid, qos, true);
     synced[key] = true;
     return;
   }
@@ -1058,6 +1098,8 @@ rmw_get_node_names_with_enclaves(
     return ret;
   }
 
+  // get_node_names does not call sync_remote_entities_to_common, so register the
+  // discovered remote participants' enclaves here before reading them back.
   sync_remote_participant_enclaves(context_data);
 
   rcutils_allocator_t allocator = rcutils_get_default_allocator();
