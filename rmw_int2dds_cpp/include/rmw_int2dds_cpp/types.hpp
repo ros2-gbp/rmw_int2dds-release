@@ -66,6 +66,7 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 // Forward declaration
 struct ServiceData;
 struct ClientData;
+struct PublisherData;
 struct EventData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
@@ -159,6 +160,7 @@ struct NodeData
   std::vector<rmw_gid_t> clients;
   std::vector<ServiceData *> live_services;
   std::vector<ClientData *> live_clients;
+  std::vector<PublisherData *> live_publishers;
 };
 
 /// Publisher implementation data
