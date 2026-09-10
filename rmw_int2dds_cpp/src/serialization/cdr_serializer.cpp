@@ -241,25 +241,21 @@ void CdrSerializer::serialize_string(const rosidl_runtime_c__String & value)
   append_byte(0);
 }
 
-// Wire format note: unlike narrow strings, ROS 2's reference RMW (rmw_fastrtps,
-// fastcdr XCDR1) serializes wstring as: uint32 length = number of characters
-// (NO null terminator counted), then each character as a 4-byte unsigned value,
-// with no trailing null. Verified against an rmw_fastrtps byte dump; the
-// previous null-terminated 2-byte-per-char encoding broke cross-vendor
-// (int2dds<->fastrtps) WStrings pub/sub while remaining self-consistent.
 void CdrSerializer::serialize_wstring(const std::u16string & value)
 {
-  serialize_uint32(static_cast<uint32_t>(value.size()));
+  uint32_t length = static_cast<uint32_t>(value.size());
+  serialize_uint32(length);
   for (char16_t ch : value) {
-    serialize_uint32(static_cast<uint32_t>(static_cast<uint16_t>(ch)));
+    serialize_uint32(static_cast<uint16_t>(ch));
   }
 }
 
 void CdrSerializer::serialize_wstring(const rosidl_runtime_c__U16String & value)
 {
-  serialize_uint32(static_cast<uint32_t>(value.size));
+  uint32_t length = static_cast<uint32_t>(value.size);
+  serialize_uint32(length);
   for (size_t i = 0; i < value.size; ++i) {
-    serialize_uint32(static_cast<uint32_t>(static_cast<uint16_t>(value.data[i])));
+    serialize_uint32(static_cast<uint16_t>(value.data[i]));
   }
 }
 
@@ -875,8 +871,9 @@ bool CdrDeserializer::deserialize_string(rosidl_runtime_c__String & value)
   if (length == 0 || !has_remaining(length)) {
     return false;
   }
-  if (!rosidl_runtime_c__String__assignn(&value, reinterpret_cast<const char *>(&data_[pos_]),
-    length - 1))
+  if (!rosidl_runtime_c__String__assignn(
+      &value, reinterpret_cast<const char *>(&data_[pos_]),
+      length - 1))
   {
     return false;
   }
@@ -884,7 +881,6 @@ bool CdrDeserializer::deserialize_string(rosidl_runtime_c__String & value)
   return true;
 }
 
-// See serialize_wstring: length = character count (no null), 4 bytes per character.
 std::u16string CdrDeserializer::deserialize_wstring()
 {
   uint32_t length = deserialize_uint32();
@@ -900,7 +896,8 @@ std::u16string CdrDeserializer::deserialize_wstring()
   std::u16string value;
   value.reserve(length);
   for (uint32_t i = 0; i < length; ++i) {
-    value.push_back(static_cast<char16_t>(deserialize_uint32()));
+    const uint32_t ch = deserialize_uint32();
+    value.push_back(static_cast<char16_t>(ch));
   }
   return value;
 }
@@ -921,7 +918,8 @@ bool CdrDeserializer::deserialize_wstring(rosidl_runtime_c__U16String & value)
   std::vector<uint16_t> decoded;
   decoded.reserve(length);
   for (uint32_t i = 0; i < length; ++i) {
-    decoded.push_back(static_cast<uint16_t>(deserialize_uint32()));
+    const uint32_t ch = deserialize_uint32();
+    decoded.push_back(static_cast<uint16_t>(ch));
   }
 
   return rosidl_runtime_c__U16String__assignn(&value, decoded.data(), decoded.size());
@@ -965,13 +963,13 @@ bool CdrDeserializer::deserialize_member_c(
     void * collection_data = member_data;
 
     if (member->is_upper_bound_ || array_size == 0) {
-              // Dynamic sequence
+      // Dynamic sequence
       array_size = deserialize_uint32();
       if (array_size > size_ - pos_) {
         return false;
       }
 
-              // Resize sequence
+      // Resize sequence
       if (member->resize_function != nullptr) {
         if (!member->resize_function(member_data, array_size)) {
           return false;
@@ -990,11 +988,6 @@ bool CdrDeserializer::deserialize_member_c(
         align(element_size);
         return deserialize_raw(first_element, array_size * element_size);
       }
-      // Same reasoning as serialize_member_c: the per-element loop below writes
-      // through the accessor result directly (the C path has no assign fallback,
-      // unlike deserialize_member_cpp), so a null first element would be a null
-      // write. Fail cleanly instead.
-      return false;
     }
 
     for (size_t i = 0; i < array_size; ++i) {

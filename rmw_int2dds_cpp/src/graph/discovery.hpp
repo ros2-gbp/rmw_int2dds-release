@@ -17,9 +17,9 @@
 
 #include <string>
 
+#include "rmw/qos_profiles.h"
 #include "rmw/ret_types.h"
 #include "rmw/types.h"
-#include "rosidl_runtime_c/type_hash.h"
 
 namespace rmw_int2dds_cpp
 {
@@ -39,27 +39,53 @@ void fini_discovery(ContextData * context_data);
 void enable_endpoint_push(ContextData * context_data);
 void disable_endpoint_push(ContextData * context_data);
 
-// Register / withdraw a locally-created endpoint in the standard rmw_dds_common
-// GraphCache entity layer (topic name + type), keyed by its DDS endpoint GUID
-// (`gid`). The node-association layer is handled separately by the caller via
-// the rmw_dds_common Context add_*_graph / remove_*_graph helpers. No-ops when
-// the common discovery context is absent.
-// `service_type_hash` is only meaningful for service/client endpoints: on ROS 2
-// Lyrical+ the GraphCache records it so rmw_get_clients/servers_info_by_service
-// reports it; on older distros it is ignored.
-void common_add_local_entity(
+// Publish local node graph changes through ros_discovery_info.
+rmw_ret_t announce_node(
+  ContextData * context_data, const std::string & name,
+  const std::string & ns);
+rmw_ret_t withdraw_node(
+  ContextData * context_data, const std::string & name,
+  const std::string & ns);
+
+// Mirror local DDS endpoints into rmw_dds_common GraphCache and publish node
+// associations over ros_discovery_info. Humble's rmw_dds_common::Context does
+// not provide the Jazzy add_*_graph wrappers, so the RMW calls these adapters.
+rmw_ret_t common_add_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
-  const std::string & dds_topic_name,
+  const std::string & topic_name,
   const std::string & type_name,
-  const rosidl_type_hash_t & type_hash,
   const rmw_qos_profile_t & qos,
-  bool is_reader,
-  const rosidl_type_hash_t * service_type_hash = nullptr);
-void common_remove_local_entity(
+  bool is_reader);
+
+rmw_ret_t common_remove_local_entity(
   ContextData * context_data,
   const rmw_gid_t & gid,
   bool is_reader);
+
+rmw_ret_t common_associate_local_writer(
+  ContextData * context_data,
+  const rmw_gid_t & writer_gid,
+  const std::string & node_name,
+  const std::string & node_namespace);
+
+rmw_ret_t common_dissociate_local_writer(
+  ContextData * context_data,
+  const rmw_gid_t & writer_gid,
+  const std::string & node_name,
+  const std::string & node_namespace);
+
+rmw_ret_t common_associate_local_reader(
+  ContextData * context_data,
+  const rmw_gid_t & reader_gid,
+  const std::string & node_name,
+  const std::string & node_namespace);
+
+rmw_ret_t common_dissociate_local_reader(
+  ContextData * context_data,
+  const rmw_gid_t & reader_gid,
+  const std::string & node_name,
+  const std::string & node_namespace);
 
 }  // namespace rmw_int2dds_cpp
 
