@@ -17,6 +17,8 @@
 #include "rmw/rmw.h"
 #if __has_include("rmw/dynamic_message_type_support.h")
 #include "rmw/dynamic_message_type_support.h"
+#include "rosidl_dynamic_typesupport/api/serialization_support.h"
+#include "rmw_int2dds_cpp/dynamic_serialization_support.hpp"
 #define RMW_INT2DDS_HAS_DYNAMIC_MESSAGE_TYPE_SUPPORT 1
 #endif
 #include "rmw/error_handling.h"
@@ -54,7 +56,7 @@ get_introspection_type_support(const rosidl_message_type_support_t * type_suppor
   if (type_support->typesupport_identifier == rosidl_typesupport_cpp::typesupport_identifier) {
     const rosidl_message_type_support_t * introspection_type_support =
       rosidl_typesupport_cpp::get_message_typesupport_handle_function(
-      type_support, rosidl_typesupport_introspection_cpp::typesupport_identifier);
+              type_support, rosidl_typesupport_introspection_cpp::typesupport_identifier);
     if (introspection_type_support != nullptr) {
       return introspection_type_support;
     }
@@ -67,7 +69,7 @@ get_introspection_type_support(const rosidl_message_type_support_t * type_suppor
   }
 
   return get_message_typesupport_handle(
-    type_support, rosidl_typesupport_introspection_cpp::typesupport_identifier);
+            type_support, rosidl_typesupport_introspection_cpp::typesupport_identifier);
 }
 
 size_t
@@ -204,9 +206,8 @@ compute_collection_size(
           supports_bounded_size = false;
           return true;
         }
-        if (!add_aligned_bounded_size(
-            total_size, 4,
-            sizeof(uint32_t) + member->string_upper_bound_ + 1))
+        if (!add_aligned_bounded_size(total_size, 4,
+          sizeof(uint32_t) + member->string_upper_bound_ + 1))
         {
           return false;
         }
@@ -399,7 +400,8 @@ serialize_message_with_type_support(
     rosidl_typesupport_introspection_cpp::typesupport_identifier)
   {
     const auto * members = static_cast<
-      const rosidl_typesupport_introspection_cpp::MessageMembers *>(introspection_type_support->data);
+      const rosidl_typesupport_introspection_cpp::MessageMembers *>(
+      introspection_type_support->data);
     return serializer.serialize_message_cpp(ros_message, members);
   }
 
@@ -438,7 +440,8 @@ deserialize_message_with_type_support(
     rosidl_typesupport_introspection_cpp::typesupport_identifier)
   {
     const auto * members = static_cast<
-      const rosidl_typesupport_introspection_cpp::MessageMembers *>(introspection_type_support->data);
+      const rosidl_typesupport_introspection_cpp::MessageMembers *>(
+      introspection_type_support->data);
     return deserializer.deserialize_message_cpp(ros_message, members);
   }
 
@@ -449,7 +452,6 @@ deserialize_message_with_type_support(
 
 extern "C"
 {
-
 rmw_ret_t
 rmw_serialize(
   const void * ros_message,
@@ -532,12 +534,13 @@ rmw_get_serialized_message_size(
     const auto * members = static_cast<
       const rosidl_typesupport_introspection_c__MessageMembers *>(introspection_type_support->data);
     size_ok = compute_message_size_c(members, total_size, supports_bounded_size);
-  } else if (
+  } else if (  // NOLINT(readability/braces): multi-line condition, ament style
     introspection_type_support->typesupport_identifier ==
     rosidl_typesupport_introspection_cpp::typesupport_identifier)
   {
     const auto * members = static_cast<
-      const rosidl_typesupport_introspection_cpp::MessageMembers *>(introspection_type_support->data);
+      const rosidl_typesupport_introspection_cpp::MessageMembers *>(
+      introspection_type_support->data);
     size_ok = compute_message_size_cpp(members, total_size, supports_bounded_size);
   } else {
     RMW_SET_ERROR_MSG("unsupported type support for serialized message size calculation");
@@ -567,12 +570,32 @@ rmw_serialization_support_init(
   rosidl_dynamic_typesupport_serialization_support_t * serialization_support)
 {
   (void)serialization_lib_name;
-  (void)allocator;
-  (void)serialization_support;
-  // Dynamic message type support is not provided by int2dds
-  RMW_SET_ERROR_MSG("rmw_serialization_support_init is not supported by rmw_int2dds_cpp");
-  return RMW_RET_UNSUPPORTED;
+  RMW_CHECK_ARGUMENT_FOR_NULL(allocator, RMW_RET_INVALID_ARGUMENT);
+  RMW_CHECK_ARGUMENT_FOR_NULL(serialization_support, RMW_RET_INVALID_ARGUMENT);
+
+  rosidl_dynamic_typesupport_serialization_support_impl_t impl;
+  if (rmw_int2dds_cpp::init_dynamic_serialization_support_impl(allocator, &impl) !=
+    RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("failed to init int2dds dynamic serialization support impl");
+    return RMW_RET_ERROR;
+  }
+
+  rosidl_dynamic_typesupport_serialization_support_interface_t methods;
+  if (rmw_int2dds_cpp::init_dynamic_serialization_support_interface(allocator, &methods) !=
+    RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("failed to init int2dds dynamic serialization support interface");
+    return RMW_RET_ERROR;
+  }
+
+  if (rosidl_dynamic_typesupport_serialization_support_init(
+      &impl, &methods, allocator, serialization_support) != RCUTILS_RET_OK)
+  {
+    RMW_SET_ERROR_MSG("rosidl_dynamic_typesupport_serialization_support_init failed");
+    return RMW_RET_ERROR;
+  }
+  return RMW_RET_OK;
 }
 #endif
-
 }  // extern "C"
