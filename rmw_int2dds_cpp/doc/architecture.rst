@@ -72,3 +72,9 @@ QoS and security
 
 QoS mapping is documented in :doc:`qos_mapping`; security (sros2) integration
 is documented in :doc:`security`.
+
+.. note::
+
+   TODO: replace the generic descriptions above with int2DDS-specific details
+   where the implementation differs (threading model, listener vs. wait-set
+   strategy, graph cache reuse of ``rmw_dds_common``, RPC correlation header).

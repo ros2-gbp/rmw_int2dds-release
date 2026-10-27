@@ -20,6 +20,7 @@
 
 extern "C"
 {
+
 rmw_ret_t
 rmw_qos_profile_check_compatible(
   const rmw_qos_profile_t publisher_profile,
@@ -28,17 +29,8 @@ rmw_qos_profile_check_compatible(
   char * reason,
   size_t reason_size)
 {
-  // Delegate to the canonical rmw_dds_common implementation. Our previous
-  // hand-rolled check only covered the reliability (best_effort->reliable) and
-  // durability (volatile->transient_local) error cases and returned OK for
-  // everything else. That made it disagree with the reference RMWs and with our
-  // own DDS matching: e.g. for a reliable publisher + best_effort subscription
-  // the reference reports WARNING while we reported OK, so
-  // test_subscription.count_mismatched expected a match that (correctly) never
-  // happens. rmw_dds_common is already a dependency and is the same logic used
-  // by fastrtps/cyclone, keeping our verdicts consistent with the conformance
-  // suite. It also performs the compatibility/reason argument validation.
   return rmw_dds_common::qos_profile_check_compatible(
     publisher_profile, subscription_profile, compatibility, reason, reason_size);
 }
+
 }  // extern "C"

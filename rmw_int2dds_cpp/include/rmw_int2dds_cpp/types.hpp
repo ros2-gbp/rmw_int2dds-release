@@ -63,10 +63,8 @@ constexpr int32_t INT2DDS_EXTENSIBILITY_FINAL = 0;
 constexpr int32_t INT2DDS_EXTENSIBILITY_APPENDABLE = 1;
 constexpr int32_t INT2DDS_EXTENSIBILITY_MUTABLE = 2;
 
-// Forward declaration
 struct ServiceData;
 struct ClientData;
-struct PublisherData;
 struct EventData;
 
 /// One user event-callback registration (rmw_event_callback_t plus the backlog
@@ -81,7 +79,6 @@ struct CallbackSlot
 };
 
 /// Context implementation data
-struct GraphListenerState;  // off-thread graph-cache applier
 struct ContextData
 {
   Int2DdsParticipantFactory * factory{nullptr};
@@ -99,28 +96,18 @@ struct ContextData
   Int2DdsDataReader * discovery_reader{nullptr};
 
   size_t domain_id{0};
-  // Precomputed "ip:port,..." list wired into int2dds SPDP unicast discovery via
-  // the "int2dds.initial_peers" participant property. Empty unless the user set
-  // rmw_discovery_options static_peers. Computed once in rmw_init.
-  std::string initial_peers;
-  // True when the user requested localhost-only discovery. Applied via
-  // multicast_ttl=0 so multicast SPDP stays on the host (remote hosts do not
-  // auto-discover this participant; local discovery is unaffected). Set in rmw_init.
+  // True when the user requested localhost-only discovery (Humble: the init-options
+  // localhost_only field). Applied via multicast_ttl=0 so multicast SPDP stays on
+  // the host; local discovery is unaffected. Set in rmw_init.
   bool localhost_only{false};
   bool is_shutdown{false};
   std::atomic<int> ref_count{0};
   std::mutex mutex;
 
-  // P3: remote endpoints (DDS GUID -> is_reader) currently mirrored from int2dds
-  // DDS discovery into the rmw_dds_common GraphCache entity layer. Each sync adds
-  // newly-discovered remote endpoints and drops departed ones. Guarded by
-  // remote_sync_mutex.
+  // Remote endpoints (DDS GUID -> is_reader) mirrored from int2DDS DDS
+  // discovery into rmw_dds_common GraphCache. Guarded by remote_sync_mutex.
   std::mutex remote_sync_mutex;
   std::map<std::array<uint8_t, RMW_GID_STORAGE_SIZE>, bool> synced_remote_entities;
-
-  // Off-thread applier that drains SEDP discovery events so the DDS discovery
-  // callback only enqueues (no GraphCache work on the discovery thread).
-  GraphListenerState * graph_listener{nullptr};
 };
 
 /// Create the DDS resources a context needs: participant factory, participant,
@@ -129,10 +116,8 @@ struct ContextData
 ///
 /// rmw_destroy_node releases these once the last node is gone (a client library
 /// may keep the context alive, so rmw_context_fini may never run). rmw_create_node
-/// calls this again to bring them back, mirroring rmw_fastrtps, where
-/// increment_context_impl_ref_count() recreates what
-/// decrement_context_impl_ref_count() released. Rolls back on failure and leaves
-/// every pointer null.
+/// calls this again to bring them back. Rolls back on failure and leaves every
+/// pointer null.
 ///
 /// \return RMW_RET_OK on success, otherwise the error is already set.
 rmw_ret_t
@@ -160,7 +145,6 @@ struct NodeData
   std::vector<rmw_gid_t> clients;
   std::vector<ServiceData *> live_services;
   std::vector<ClientData *> live_clients;
-  std::vector<PublisherData *> live_publishers;
 };
 
 /// Publisher implementation data
@@ -205,8 +189,7 @@ struct PublisherData
   // EventData objects created by rmw_publisher_event_init for this
   // publisher. rcl/rclpy never call rmw_event_fini (measured: fini count 0), so
   // unless the entity owns them, every create/destroy churn leaks one EventData
-  // per event type (int2dds-specific; the reference RMW ties event data to the
-  // entity likewise). Guarded by event_mutex; freed in rmw_destroy_publisher.
+  // per event type (int2dds-specific). Guarded by event_mutex; freed in rmw_destroy_publisher.
   std::mutex event_mutex;
   std::vector<EventData *> events;
 };
@@ -269,8 +252,7 @@ struct SubscriptionData
   // EventData objects created by rmw_subscription_event_init for this
   // subscription. rcl/rclpy never call rmw_event_fini (measured: fini count 0),
   // so unless the entity owns them, every create/destroy churn leaks one
-  // EventData per event type (int2dds-specific; the reference RMW ties event
-  // data to the entity likewise). Guarded by event_mutex; freed in
+  // EventData per event type (int2dds-specific). Guarded by event_mutex; freed in
   // rmw_destroy_subscription.
   std::mutex event_mutex;
   std::vector<EventData *> events;
@@ -317,10 +299,6 @@ struct WaitSetData
   // Attached conditions, each stamped with the attach_generation that last
   // wanted it. A rebuild detaches whatever keeps an older stamp.
   uint64_t attach_generation{0};
-  // Set when an attach failed, so the next rmw_wait rebuilds even if the entity
-  // set is unchanged - including when it is empty, which no comparison against
-  // the cached lists can express.
-  bool force_rebuild{false};
   std::unordered_map<Int2DdsStatusCondition *, uint64_t> attached_conditions;
   std::unordered_map<Int2DdsGuardCondition *, uint64_t> attached_guards;
 };

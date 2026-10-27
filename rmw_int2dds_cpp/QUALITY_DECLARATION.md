@@ -13,7 +13,7 @@ requirement listed in the [Package Quality Categories in REP-2004](https://www.r
 ### Version Scheme [1.i]
 
 `rmw_int2dds_cpp` uses `semver` according to the recommendation for ROS Core
-packages in the [ROS 2 Developer Guide](https://docs.ros.org/en/rolling/The-ROS2-Project/Contributing/Developer-Guide.html#versioning).
+packages in the [ROS 2 Developer Guide](https://docs.ros.org/en/humble/The-ROS2-Project/Contributing/Developer-Guide.html#versioning).
 
 ### Version Stability [1.ii]
 
@@ -53,6 +53,8 @@ binary is published on public GitHub Releases — and is planned; until it is
 configured, `test_rmw_implementation` conformance is reproduced manually and
 recorded in the README (see [Test status](../README.md)).
 
+> TODO: add CI badges / links once public CI is configured.
+
 ## Documentation [3]
 
 ### Feature Documentation [3.i]
@@ -85,6 +87,8 @@ The package is tested against the ROS 2 RMW conformance suite
 exercised via `test_rclcpp` / `system_tests`. Per-distribution conformance
 results are recorded in the README [Test status](../README.md) table.
 
+> TODO: link to public test results / CI runs.
+
 ### Coverage [4.iii] / Performance [4.iv]
 
 Coverage and performance testing policies are not yet established
@@ -103,8 +107,8 @@ Direct runtime dependencies (`rmw`, `rmw_dds_common`, `rcutils`, `rcpputils`,
 The `int2dds` core library is an external (non-ROS) dependency provided by
 Intellectus Corp. under Apache 2.0.
 
-A formal quality-level assessment of the `int2dds` core will be added once its
-own quality documentation is published.
+> TODO: state the quality level assessment of the int2dds core once its own
+> quality documentation is published.
 
 ## Platform Support [6]
 
