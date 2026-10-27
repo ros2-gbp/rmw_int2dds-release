@@ -4,7 +4,7 @@ Changelog for package int2dds_ffi_vendor
 
 1.0.0 (2026-10-27)
 ------------------
-* Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The libraries
+* Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The artifacts
   are a fresh build, so the sha256 of every artifact moved.
 * The soname moved from ``libint2dds_ffi.so.0`` to ``libint2dds_ffi.so.1``;
   anything linked against 0.1.8 needs a rebuild.
@@ -18,28 +18,28 @@ Changelog for package int2dds_ffi_vendor
 
 0.1.8 (2026-10-07)
 ------------------
-* Vendor the int2DDS FFI 0.1.8 release assets in place of 0.1.7. The libraries
+* Vendor the int2DDS FFI 0.1.8 release assets in place of 0.1.7. The artifacts
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.7 (2026-09-23)
 ------------------
-* Vendor the int2DDS FFI 0.1.7 release assets in place of 0.1.6. The libraries
+* Vendor the int2DDS FFI 0.1.7 release assets in place of 0.1.6. The artifacts
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.6 (2026-09-22)
 ------------------
-* Vendor the int2DDS FFI 0.1.6 release assets in place of 0.1.5. The libraries
+* Vendor the int2DDS FFI 0.1.6 release assets in place of 0.1.5. The artifacts
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.5 (2026-09-10)
 ------------------
-* Vendor the int2DDS FFI 0.1.5 release assets in place of 0.1.4. The libraries
+* Vendor the int2DDS FFI 0.1.5 release assets in place of 0.1.4. The artifacts
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
