@@ -31,12 +31,12 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 | Platform | amd64 | arm64 | arm32 |
 |----------|-------|-------|-------|
-| Ubuntu 22.04 (Jammy) | Verified | Verified | Verified |
+| Ubuntu 24.04 (Noble) | Verified | Verified | Verified |
 | Windows 10 | Verified (on Windows 11) |  |  |
-| RHEL 8 | Verified |  |  |
-| Ubuntu 20.04 (Focal) | Verified | Verified | Verified |
+| RHEL 9 | Verified |  |  |
+| Ubuntu 22.04 (Jammy) | Verified |  |  |
 | macOS | Verified |  |  |
-| Debian 11 (Bullseye) | Verified | Verified | Verified |
+| Debian 12 (Bookworm) | Verified | Verified | Verified |
 | OpenEmbedded / Yocto | Verified | Verified | Verified |
 
 - Windows: verified on Windows 11 with Visual Studio 2019. See [Windows and macOS](#windows-and-macos).
@@ -49,13 +49,13 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 sudo apt update
-sudo apt install ros-humble-rmw-int2dds-cpp
-source /opt/ros/humble/setup.bash
+sudo apt install ros-jazzy-rmw-int2dds-cpp
+source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ```
 
 `apt install` pulls in the `int2dds_ffi_vendor` package automatically. The RMW library
-and its ament-index marker install into `/opt/ros/humble/`, so once the environment is
+and its ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
 sourced only `RMW_IMPLEMENTATION` needs to be set.
 
 Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64** (rolling: testing repository only).
@@ -63,11 +63,11 @@ Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64** (rolling:
 ### From the ROS 2 RPM repository (RHEL)
 
 With the ROS 2 RPM repository set up as in the
-[ROS 2 RHEL installation guide](https://docs.ros.org/en/humble/Installation/RHEL-Install-RPMs.html):
+[ROS 2 RHEL installation guide](https://docs.ros.org/en/jazzy/Installation/RHEL-Install-RPMs.html):
 
 ```bash
-sudo dnf install ros-humble-rmw-int2dds-cpp
-source /opt/ros/humble/setup.bash
+sudo dnf install ros-jazzy-rmw-int2dds-cpp
+source /opt/ros/jazzy/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ```
 
@@ -78,7 +78,7 @@ The newest release is available from the ROS 2 testing repository:
 ```bash
 sudo apt install -y ros2-testing-apt-source
 sudo apt update
-sudo apt install ros-humble-rmw-int2dds-cpp
+sudo apt install ros-jazzy-rmw-int2dds-cpp
 ```
 
 To build from source instead, follow [Quick Start](#quick-start).
@@ -90,8 +90,7 @@ source on top of a ROS 2 installation made with the ROS 2 installation guide for
 that platform. `int2dds_ffi_vendor` downloads the FFI for the host from the
 [int2DDS releases](https://github.com/IntellectusCorp/int2DDS/releases).
 
-Windows, in an x64 Native Tools Command Prompt for VS 2019. The commands below assume ROS 2 Humble in
-`C:\pixi_ws\ros2-windows`; change the paths to match your installation.
+Windows, in an x64 Native Tools Command Prompt for VS 2019, with ROS 2 Jazzy installed as in the ROS 2 Windows binary guide (`C:\pixi_ws`).
 The ROS 2 Windows binaries are Release builds, so build `rmw_int2dds` as Release too:
 
 ```bat
@@ -99,7 +98,7 @@ cd /d C:\pixi_ws
 pixi shell
 call C:\pixi_ws\ros2-windows\local_setup.bat
 md C:\dev\ros2_ws\src
-git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git C:\dev\ros2_ws\src\rmw_int2dds
+git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git C:\dev\ros2_ws\src\rmw_int2dds
 cd /d C:\dev\ros2_ws
 colcon build --merge-install --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release
 call C:\dev\ros2_ws\install\local_setup.bat
@@ -111,7 +110,7 @@ macOS (in the shell where the ROS 2 environment is active):
 
 ```bash
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
 cd ~/ros2_ws
 colcon build --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 source install/setup.bash
@@ -124,11 +123,11 @@ ros2 run demo_nodes_cpp talker
 ```bash
 # 1) Get the sources into your ROS 2 workspace
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -141,9 +140,9 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
-On Tier 3 platforms (for Humble: Ubuntu 20.04, Debian 11 and arm32) ROS 2 has no binary packages:
-build ROS 2 from source first ([guide](https://docs.ros.org/en/humble/Installation/Alternatives/Ubuntu-Development-Setup.html))
-and in step 2 source that workspace's `install/setup.bash` instead of `/opt/ros/humble/setup.bash`.
+On Tier 3 platforms (for Jazzy: Ubuntu 22.04, Debian 12 and arm32) ROS 2 has no binary packages:
+build ROS 2 from source first ([guide](https://docs.ros.org/en/jazzy/Installation/Alternatives/Ubuntu-Development-Setup.html))
+and in step 2 source that workspace's `install/setup.bash` instead of `/opt/ros/jazzy/setup.bash`.
 
 ## Running examples
 

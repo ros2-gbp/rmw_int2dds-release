@@ -14,8 +14,6 @@ Changelog for package int2dds_ffi_vendor
   the selected archive, and every Linux architecture, ``armhf`` included, has
   a musl archive.
 * Install the Windows DLL to ``bin/`` and the macOS dylib to ``lib/``.
-* Extract the archive with ``cmake -E tar`` instead of ``file(ARCHIVE_EXTRACT)``
-  so the package also configures with the CMake 3.16 of Ubuntu 20.04.
 * Contributors: Intellectus Corp.
 
 0.1.8 (2026-10-07)
@@ -69,11 +67,6 @@ Changelog for package int2dds_ffi_vendor
 * Contributors: Intellectus Corp.
 
 0.1.1 (2026-08-28)
-------------------
-* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
-* Contributors: Intellectus Corp.
-
-0.1.0 (2026-08-21)
 ------------------
 * Move the package into the ``rmw_int2dds`` repository, next to
   ``rmw_int2dds_cpp``, so the two are released in lockstep. The prebuilt FFI

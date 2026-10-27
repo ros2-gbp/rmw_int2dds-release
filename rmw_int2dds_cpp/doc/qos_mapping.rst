@@ -36,14 +36,22 @@ current support status of each policy.
    * - Liveliness lease duration
      - Liveliness lease_duration
      - Supported (finite and infinite leases)
+   * - System default policies
+     - n/a
+     - Resolved to concrete defaults (RELIABLE / VOLATILE / KEEP_LAST 10 /
+       AUTOMATIC) and reported via ``get_actual_qos``
+   * - Best available (Jazzy)
+     - n/a
+     - Supported. Adapted to discovered endpoints via
+       ``rmw_dds_common::qos_profile_get_best_available_for_topic_*``
 
-Verification evidence (2026-06-11, Humble)
-------------------------------------------
+Verification evidence (2026-06-11, Jazzy)
+-----------------------------------------
 
-* Official ``test_quality_of_service`` suite: 3/3 PASS
-  (deadline, lifespan, liveliness).
+* Official ``test_quality_of_service`` suite: 4/4 PASS
+  (deadline, lifespan, liveliness, best_available).
 * In-repo QoS demos (``validation/qos``) on ``rmw_int2dds_cpp``: deadline event,
   durability late-joiner, history/depth drain, lifespan expiry,
   liveliness AUTOMATIC and MANUAL_BY_TOPIC — all OK.
 * QoS *compatibility* rules: ``rmw_qos_profile_check_compatible`` delegates to
-  ``rmw_dds_common`` where available.
+  ``rmw_dds_common``.

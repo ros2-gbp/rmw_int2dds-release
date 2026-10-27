@@ -81,3 +81,30 @@ colcon build --cmake-args -DINT2DDS_FFI_LIBC=musl
 ```
 
 Every Linux architecture, `armhf` included, has a musl archive.
+
+### Building against a locally built FFI
+
+`INT2DDS_FFI_TARBALL` replaces the download with an archive you already have — an
+int2DDS release archive for the host, or one with the same layout:
+
+```bash
+colcon build --cmake-args \
+  -DINT2DDS_FFI_TARBALL=/path/to/int2dds-1.0.0-linux-x86_64.tar.gz
+```
+
+Two reasons to reach for it. The obvious one is offline builds. The other is
+that the release tag does not identify the ABI: the `v0.1.1` assets were rebuilt
+in place, so two different `int2dds-ffi.h` files have shipped under that one
+version, and because the manifest is rebuilt along with them the sha256 check
+cannot separate the two either. Naming the file is the only way to be sure which
+build you linked against.
+
+Integrity checking is unchanged — the manifest travels inside the tarball, so the
+selected library is still verified. The archive must be the one for
+`INT2DDS_FFI_VERSION` and the host: its top folder `int2dds-<version>-<dist>/` is
+looked up by name, so an archive for another version, OS or architecture fails
+with `include/int2dds-ffi.h not found`.
+
+Building this package and `rmw_int2dds_cpp` in one `colcon` invocation makes
+CMake warn that `INT2DDS_FFI_TARBALL` went unused — `--cmake-args` reaches every
+selected package, and only this one reads the variable. The warning is harmless.

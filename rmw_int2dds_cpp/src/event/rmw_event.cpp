@@ -31,11 +31,6 @@
 #include "rmw/events_statuses/matched.h"
 #endif
 
-#if __has_include("rmw/events_statuses/incompatible_type.h")
-#define RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT 1
-#include "rmw/events_statuses/incompatible_type.h"
-#endif
-
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
@@ -54,9 +49,7 @@ is_supported_publisher_event(rmw_event_type_t event_type)
     case RMW_EVENT_LIVELINESS_LOST:
     case RMW_EVENT_OFFERED_DEADLINE_MISSED:
     case RMW_EVENT_OFFERED_QOS_INCOMPATIBLE:
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE:
-#endif
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_PUBLICATION_MATCHED:
 #endif
@@ -73,9 +66,7 @@ is_supported_subscription_event(rmw_event_type_t event_type)
     case RMW_EVENT_LIVELINESS_CHANGED:
     case RMW_EVENT_REQUESTED_DEADLINE_MISSED:
     case RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE:
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE:
-#endif
     case RMW_EVENT_MESSAGE_LOST:
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_SUBSCRIPTION_MATCHED:
@@ -102,10 +93,8 @@ event_type_to_status_mask(rmw_event_type_t event_type)
       return INT2DDS_STATUS_OFFERED_DEADLINE_MISSED;
     case RMW_EVENT_OFFERED_QOS_INCOMPATIBLE:
       return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_QOS;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE:
       return INT2DDS_STATUS_OFFERED_INCOMPATIBLE_TYPE;
-#endif
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_PUBLICATION_MATCHED:
       return INT2DDS_STATUS_PUBLICATION_MATCHED;
@@ -116,10 +105,8 @@ event_type_to_status_mask(rmw_event_type_t event_type)
       return INT2DDS_STATUS_REQUESTED_DEADLINE_MISSED;
     case RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE:
       return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_QOS;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE:
       return INT2DDS_STATUS_REQUESTED_INCOMPATIBLE_TYPE;
-#endif
     case RMW_EVENT_MESSAGE_LOST:
       return INT2DDS_STATUS_SAMPLE_LOST;
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
@@ -279,8 +266,7 @@ take_publisher_event(
     case RMW_EVENT_LIVELINESS_LOST: {
         auto * status = static_cast<rmw_liveliness_lost_status_t *>(event_info);
         Int2DdsLivelinessLostStatus ffi_status{};
-        Int2DdsRet ret = int2dds_datawriter_get_liveliness_lost_status(
-          pub_data->datawriter,
+        Int2DdsRet ret = int2dds_datawriter_get_liveliness_lost_status(pub_data->datawriter,
           &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get liveliness lost status");
@@ -297,7 +283,7 @@ take_publisher_event(
         auto * status = static_cast<rmw_offered_deadline_missed_status_t *>(event_info);
         Int2DdsOfferedDeadlineMissedStatus ffi_status{};
         Int2DdsRet ret = int2dds_datawriter_get_offered_deadline_missed_status(
-          pub_data->datawriter, &ffi_status);
+        pub_data->datawriter, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get offered deadline missed status");
           return RMW_RET_ERROR;
@@ -313,7 +299,7 @@ take_publisher_event(
         auto * status = static_cast<rmw_offered_qos_incompatible_event_status_t *>(event_info);
         Int2DdsOfferedIncompatibleQosStatus ffi_status{};
         Int2DdsRet ret = int2dds_datawriter_get_offered_incompatible_qos_status(
-          pub_data->datawriter, &ffi_status);
+        pub_data->datawriter, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get offered incompatible qos status");
           return RMW_RET_ERROR;
@@ -326,12 +312,11 @@ take_publisher_event(
         event_data->last_total_count = static_cast<size_t>(ffi_status.total_count);
         return RMW_RET_OK;
       }
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE: {
         auto * status = static_cast<rmw_incompatible_type_status_t *>(event_info);
         Int2DdsOfferedIncompatibleTypeStatus ffi_status{};
         Int2DdsRet ret = int2dds_datawriter_get_offered_incompatible_type_status(
-          pub_data->datawriter, &ffi_status);
+        pub_data->datawriter, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get offered incompatible type status");
           return RMW_RET_ERROR;
@@ -343,13 +328,12 @@ take_publisher_event(
         event_data->last_total_count = static_cast<size_t>(ffi_status.total_count);
         return RMW_RET_OK;
       }
-#endif
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
     case RMW_EVENT_PUBLICATION_MATCHED: {
         auto * status = static_cast<rmw_matched_status_t *>(event_info);
         Int2DdsPublicationMatchedStatus matched_status = {};
         Int2DdsRet ret = int2dds_datawriter_get_publication_matched_status(
-          pub_data->datawriter, &matched_status);
+        pub_data->datawriter, &matched_status);
         const int32_t total_count = matched_status.total_count;
         const int32_t current_count = matched_status.current_count;
         if (ret != INT2DDS_RET_OK) {
@@ -398,7 +382,7 @@ take_subscription_event(
         auto * status = static_cast<rmw_liveliness_changed_status_t *>(event_info);
         Int2DdsLivelinessChangedStatus ffi_status{};
         Int2DdsRet ret = int2dds_datareader_get_liveliness_changed_status(
-          sub_data->datareader, &ffi_status);
+        sub_data->datareader, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get liveliness changed status");
           return RMW_RET_ERROR;
@@ -419,7 +403,7 @@ take_subscription_event(
         auto * status = static_cast<rmw_requested_deadline_missed_status_t *>(event_info);
         Int2DdsRequestedDeadlineMissedStatus ffi_status{};
         Int2DdsRet ret = int2dds_datareader_get_requested_deadline_missed_status(
-          sub_data->datareader, &ffi_status);
+        sub_data->datareader, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get requested deadline missed status");
           return RMW_RET_ERROR;
@@ -435,7 +419,7 @@ take_subscription_event(
         auto * status = static_cast<rmw_requested_qos_incompatible_event_status_t *>(event_info);
         Int2DdsRequestedIncompatibleQosStatus ffi_status{};
         Int2DdsRet ret = int2dds_datareader_get_requested_incompatible_qos_status(
-          sub_data->datareader, &ffi_status);
+        sub_data->datareader, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get requested incompatible qos status");
           return RMW_RET_ERROR;
@@ -448,12 +432,11 @@ take_subscription_event(
         event_data->last_total_count = static_cast<size_t>(ffi_status.total_count);
         return RMW_RET_OK;
       }
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
     case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE: {
         auto * status = static_cast<rmw_incompatible_type_status_t *>(event_info);
         Int2DdsRequestedIncompatibleTypeStatus ffi_status{};
         Int2DdsRet ret = int2dds_datareader_get_requested_incompatible_type_status(
-          sub_data->datareader, &ffi_status);
+        sub_data->datareader, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get requested incompatible type status");
           return RMW_RET_ERROR;
@@ -465,18 +448,17 @@ take_subscription_event(
         event_data->last_total_count = static_cast<size_t>(ffi_status.total_count);
         return RMW_RET_OK;
       }
-#endif
     case RMW_EVENT_MESSAGE_LOST: {
         auto * status = static_cast<rmw_message_lost_status_t *>(event_info);
         Int2DdsSampleLostStatus ffi_status{};
         Int2DdsRet ret = int2dds_datareader_get_sample_lost_status(
-          sub_data->datareader, &ffi_status);
+        sub_data->datareader, &ffi_status);
         if (ret != INT2DDS_RET_OK) {
           RMW_SET_ERROR_MSG("failed to get sample lost status");
           return RMW_RET_ERROR;
         }
         populate_message_lost_status(
-          ffi_status, &event_data->last_total_count, status, changed);
+        ffi_status, &event_data->last_total_count, status, changed);
         return RMW_RET_OK;
       }
 #ifdef RMW_INT2DDS_HAS_MATCHED_EVENT
@@ -484,7 +466,7 @@ take_subscription_event(
         auto * status = static_cast<rmw_matched_status_t *>(event_info);
         Int2DdsSubscriptionMatchedStatus matched_status = {};
         Int2DdsRet ret = int2dds_datareader_get_subscription_matched_status(
-          sub_data->datareader, &matched_status);
+        sub_data->datareader, &matched_status);
         const int32_t total_count = matched_status.total_count;
         const int32_t current_count = matched_status.current_count;
         if (ret != INT2DDS_RET_OK) {
@@ -832,11 +814,9 @@ rmw_event_set_callback(
         case RMW_EVENT_OFFERED_QOS_INCOMPATIBLE:
           slot = &pub_data->offered_incompatible_qos_slot;
           break;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
         case RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE:
           slot = &pub_data->offered_incompatible_type_slot;
           break;
-#endif
         case RMW_EVENT_LIVELINESS_LOST:
           slot = &pub_data->liveliness_lost_slot;
           break;
@@ -868,7 +848,6 @@ rmw_event_set_callback(
             callback(user_data, static_cast<size_t>(seed.total_count));
           }
         }
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
         // Type incompatibility is counted by the core at match time, which can
         // precede the on_new_event registration. Seed the backlog from the status.
         if (event_data->event_type == RMW_EVENT_PUBLISHER_INCOMPATIBLE_TYPE &&
@@ -881,7 +860,6 @@ rmw_event_set_callback(
             callback(user_data, static_cast<size_t>(seed.total_count));
           }
         }
-#endif
         rmw_int2dds_cpp::refresh_publisher_listener(pub_data);
       }
     } else {
@@ -894,11 +872,9 @@ rmw_event_set_callback(
         case RMW_EVENT_REQUESTED_QOS_INCOMPATIBLE:
           slot = &sub_data->requested_incompatible_qos_slot;
           break;
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
         case RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE:
           slot = &sub_data->requested_incompatible_type_slot;
           break;
-#endif
         case RMW_EVENT_MESSAGE_LOST:
           slot = &sub_data->message_lost_slot;
           break;
@@ -938,7 +914,6 @@ rmw_event_set_callback(
             callback(user_data, static_cast<size_t>(seed.total_count));
           }
         }
-#ifdef RMW_INT2DDS_HAS_INCOMPATIBLE_TYPE_EVENT
         // Same backlog seeding for requested-incompatible-type.
         if (event_data->event_type == RMW_EVENT_SUBSCRIPTION_INCOMPATIBLE_TYPE &&
           callback != nullptr)
@@ -950,7 +925,6 @@ rmw_event_set_callback(
             callback(user_data, static_cast<size_t>(seed.total_count));
           }
         }
-#endif
         rmw_int2dds_cpp::refresh_subscription_listener(sub_data);
       }
     }
