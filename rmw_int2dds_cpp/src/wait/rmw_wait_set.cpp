@@ -80,8 +80,16 @@ rmw_create_wait_set(rmw_context_t * context, size_t max_conditions)
 rmw_ret_t
 rmw_destroy_wait_set(rmw_wait_set_t * wait_set)
 {
-  // The RMW conformance suite expects RMW_RET_ERROR (not INVALID_ARGUMENT) here.
+// The conformance suite's expectation for a null wait_set changed across
+// distros: Jazzy expects RMW_RET_ERROR, Lyrical expects RMW_RET_INVALID_ARGUMENT
+// The probe is rmw/get_service_endpoint_info.h (rmw 7.9.1), used here only as a
+// "Lyrical or newer" marker - the suite's expectation is not tied to that
+// header's release, and no distro ships an rmw between 7.8.2 and 7.10.1.
+#if __has_include("rmw/get_service_endpoint_info.h")
+  RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_INVALID_ARGUMENT);
+#else
   RMW_CHECK_ARGUMENT_FOR_NULL(wait_set, RMW_RET_ERROR);
+#endif
 
   if (wait_set->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
     RMW_SET_ERROR_MSG("wait set not from this implementation");
