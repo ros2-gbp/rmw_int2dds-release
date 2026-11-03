@@ -29,6 +29,3 @@ ros2 run demo_nodes_cpp add_two_ints_client
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ros2 run demo_nodes_cpp talker_qos     # if available in your distro
 ```
-
-> TODO: add package-local example nodes (rclcpp) where helpful, with a
-> CMakeLists.txt that builds them.

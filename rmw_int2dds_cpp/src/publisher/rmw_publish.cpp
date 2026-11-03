@@ -25,7 +25,7 @@
 #include "rosidl_typesupport_introspection_cpp/identifier.hpp"
 #include "rosidl_typesupport_introspection_cpp/message_introspection.hpp"
 
-#include "int2dds-ffi.h"
+#include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
 #include "rmw_int2dds_cpp/identifier.hpp"
 #include "rmw_int2dds_cpp/types.hpp"
 #include "rmw_int2dds_cpp/cdr_serializer.hpp"
@@ -127,7 +127,6 @@ record_publish_profile(
 
 extern "C"
 {
-
 rmw_ret_t
 rmw_publish(
   const rmw_publisher_t * publisher,
@@ -350,5 +349,4 @@ rmw_fini_publisher_allocation(rmw_publisher_allocation_t * allocation)
   RMW_SET_ERROR_MSG("rmw_fini_publisher_allocation is not supported by rmw_int2dds_cpp");
   return RMW_RET_UNSUPPORTED;
 }
-
 }  // extern "C"

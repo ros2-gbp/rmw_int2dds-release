@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <mutex>
 #include <new>
-#include <utility>
 #include <vector>
 
 #include "int2dds-ffi.h"  // NOLINT(build/include_subdir): vendored FFI header
@@ -37,11 +36,6 @@ std::vector<WaitSetData *> & wait_sets()
   static std::vector<WaitSetData *> * v = new std::vector<WaitSetData *>();
   return *v;
 }
-std::vector<GuardConditionData *> & retired_guards()
-{
-  static std::vector<GuardConditionData *> * v = new std::vector<GuardConditionData *>();
-  return *v;
-}
 }  // namespace
 
 bool
@@ -56,6 +50,13 @@ waitset_registry_add(WaitSetData * ws_data)
   return true;
 }
 
+// Deliberately does not wait out cache_busy the way clean_caches does. The two
+// are asymmetric because their callers are: clean_caches runs from the destroy
+// path of some OTHER entity, which the rmw contract allows to happen while this
+// wait set is in rmw_wait, so it has to wait out the sections that hold no lock.
+// This one runs from rmw_destroy_wait_set, and rmw documents that function as
+// "Thread-Safe | No" - a concurrent rmw_wait on the same wait set is caller
+// error, so there is no legal cache_busy section to wait out.
 void
 waitset_registry_remove(WaitSetData * ws_data)
 {
@@ -64,56 +65,33 @@ waitset_registry_remove(WaitSetData * ws_data)
     std::remove(wait_sets().begin(), wait_sets().end(), ws_data), wait_sets().end());
 }
 
-void
-waitset_registry_retire_guard(GuardConditionData * gc_data)
-{
-  std::lock_guard<std::mutex> lock(registry_mutex());
-  retired_guards().push_back(gc_data);
-}
-
+// Not wrapped in try/catch, though it is reached from extern "C" rmw entry
+// points. The only things here that can throw are std::lock_guard and
+// condition_variable::wait raising std::system_error, i.e. the OS refusing a
+// mutex operation. Catching that would leave every wait set still holding
+// conditions this call was supposed to detach, which is worse than terminating.
+// It is also not what makes the C boundary exception-safe: nothing else in this
+// package has a barrier either, and its containers can throw std::bad_alloc from
+// far more places than this. The one catch in this file, in
+// waitset_registry_add, is a different thing - it turns a recoverable insert
+// failure into a return value so wait set creation aborts cleanly.
 void
 waitset_registry_clean_caches()
 {
   std::lock_guard<std::mutex> lock(registry_mutex());
-
-  // Reclaiming needs every wait set lock held at once, since rmw_wait takes
-  // the same lock before it sets inuse. Most calls have nothing to reclaim.
-  const bool reclaiming = !retired_guards().empty();
-  std::vector<std::unique_lock<std::mutex>> held;
-  if (reclaiming) {
-    held.reserve(wait_sets().size());
-  }
-
-  bool any_inuse = false;
   for (auto * ws_data : wait_sets()) {
     std::unique_lock<std::mutex> ws_lock(ws_data->lock);
     // cache_busy never spans the blocking FFI wait, so this wait is short.
     ws_data->cache_cv.wait(ws_lock, [ws_data] {return !ws_data->cache_busy;});
     if (!ws_data->inuse) {
       waitset_detach_all(ws_data);
-    } else {
-      // Blocked in the FFI wait: its attachments cannot be touched from here,
-      // so the handles it holds have to stay valid.
-      any_inuse = true;
     }
-    if (reclaiming) {
-      held.push_back(std::move(ws_lock));
-    }
+    // inuse without cache_busy means the wait set is blocked inside
+    // int2dds_waitset_wait_ex_ns with attachments and cache mirroring its
+    // current entity set. The entity being destroyed cannot be in that set
+    // (the rmw contract forbids destroying entities being waited on), so
+    // there is nothing of it here to clean and skipping is safe.
   }
-
-  if (!reclaiming || any_inuse) {
-    return;
-  }
-
-  // Nothing is inside rmw_wait and every wait set was just detached, so no
-  // thread can still reach these records.
-  for (auto * gc_data : retired_guards()) {
-    if (gc_data->owns_guard_condition && gc_data->guard_condition != nullptr) {
-      int2dds_guardcondition_delete(gc_data->guard_condition);
-    }
-    delete gc_data;
-  }
-  retired_guards().clear();
 }
 
 void
