@@ -2,6 +2,11 @@
 Changelog for package rmw_int2dds_validation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.1 (2026-11-03)
+------------------
+* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
+* Contributors: Intellectus Corp.
+
 1.0.0 (2026-10-27)
 ------------------
 * No source changes; released in lockstep with ``rmw_int2dds_cpp``.
@@ -38,6 +43,11 @@ Changelog for package rmw_int2dds_validation
 * Contributors: Intellectus Corp.
 
 0.1.1 (2026-08-28)
+------------------
+* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
+* Contributors: Intellectus Corp.
+
+0.1.0 (2026-08-21)
 ------------------
 * Split the rclcpp and rclpy validation probes out of ``rmw_int2dds_cpp`` into
   this package: QoS behaviour (durability, history depth, deadline, liveliness,

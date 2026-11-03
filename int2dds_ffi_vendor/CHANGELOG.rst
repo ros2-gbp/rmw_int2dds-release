@@ -2,9 +2,18 @@
 Changelog for package int2dds_ffi_vendor
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+1.0.1 (2026-11-03)
+------------------
+* Vendor the int2DDS FFI 1.0.1 release assets in place of 1.0.0. The libraries
+  are a fresh build, so the sha256 of every artifact moved. The published
+  ``int2dds-ffi.h`` is identical to the one shipped with 1.0.0.
+* The soname is unchanged at ``libint2dds_ffi.so.1``, and so is the glibc
+  floor (2.28 on x86_64, aarch64 and armhf).
+* Contributors: Intellectus Corp.
+
 1.0.0 (2026-10-27)
 ------------------
-* Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The artifacts
+* Vendor the int2DDS FFI 1.0.0 release assets in place of 0.1.8. The libraries
   are a fresh build, so the sha256 of every artifact moved.
 * The soname moved from ``libint2dds_ffi.so.0`` to ``libint2dds_ffi.so.1``;
   anything linked against 0.1.8 needs a rebuild.
@@ -14,32 +23,34 @@ Changelog for package int2dds_ffi_vendor
   the selected archive, and every Linux architecture, ``armhf`` included, has
   a musl archive.
 * Install the Windows DLL to ``bin/`` and the macOS dylib to ``lib/``.
+* Extract the archive with ``cmake -E tar`` instead of ``file(ARCHIVE_EXTRACT)``
+  so the package also configures with the CMake 3.16 of Ubuntu 20.04.
 * Contributors: Intellectus Corp.
 
 0.1.8 (2026-10-07)
 ------------------
-* Vendor the int2DDS FFI 0.1.8 release assets in place of 0.1.7. The artifacts
+* Vendor the int2DDS FFI 0.1.8 release assets in place of 0.1.7. The libraries
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.7 (2026-09-23)
 ------------------
-* Vendor the int2DDS FFI 0.1.7 release assets in place of 0.1.6. The artifacts
+* Vendor the int2DDS FFI 0.1.7 release assets in place of 0.1.6. The libraries
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.6 (2026-09-22)
 ------------------
-* Vendor the int2DDS FFI 0.1.6 release assets in place of 0.1.5. The artifacts
+* Vendor the int2DDS FFI 0.1.6 release assets in place of 0.1.5. The libraries
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
 
 0.1.5 (2026-09-10)
 ------------------
-* Vendor the int2DDS FFI 0.1.5 release assets in place of 0.1.4. The artifacts
+* Vendor the int2DDS FFI 0.1.5 release assets in place of 0.1.4. The libraries
   are a fresh build, so the sha256 of every artifact moved.
 * The soname is unchanged at ``libint2dds_ffi.so.0``.
 * Contributors: Intellectus Corp.
@@ -67,6 +78,11 @@ Changelog for package int2dds_ffi_vendor
 * Contributors: Intellectus Corp.
 
 0.1.1 (2026-08-28)
+------------------
+* No source changes; released in lockstep with ``rmw_int2dds_cpp``.
+* Contributors: Intellectus Corp.
+
+0.1.0 (2026-08-21)
 ------------------
 * Move the package into the ``rmw_int2dds`` repository, next to
   ``rmw_int2dds_cpp``, so the two are released in lockstep. The prebuilt FFI

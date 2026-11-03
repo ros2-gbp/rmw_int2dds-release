@@ -29,21 +29,47 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ### Supported platforms
 
-| Platform | amd64 | arm64 |
-|----------|-------|-------|
-| Ubuntu 26.04 (Resolute) | Verified | Verified |
+| Platform | amd64 | arm64 | arm32 |
+|----------|-------|-------|-------|
+| Ubuntu 22.04 (Jammy) | Verified | Verified | Verified |
+| Windows 10 | Verified (on Windows 11) |  |  |
+| RHEL 8 | Verified |  |  |
+| Ubuntu 20.04 (Focal) | Verified | Verified | Verified |
+| macOS | Verified |  |  |
+| Debian 11 (Bullseye) | Verified | Verified | Verified |
+| OpenEmbedded / Yocto | Verified | Verified | Verified |
 
-- Windows, macOS: not verified on Rolling.
-- arm32: not supported. ROS 2 publishes no arm32 binaries.
+- Windows: verified on Windows 11 with Visual Studio 2019. See [Windows and macOS](#windows-and-macos).
+- macOS: verified on macOS 15.
+- OpenEmbedded / Yocto: verified with a local layer that adds the `rmw_int2dds` recipes. arm32 needs one change in meta-ros: in `meta-ros2/classes/ros_ament_cmake.bbclass`, replace `inherit cmake python3native` with `inherit cmake python3targetconfig`. Without it, the ROS 2 message packages fail with a `LONG_BIT` error before `rmw_int2dds` is reached ([ros/meta-ros#1205](https://github.com/ros/meta-ros/issues/1205), [fix](https://github.com/ros/meta-ros/issues/1205#issuecomment-2298233842)). Boards running an older kernel also need `OLDEST_KERNEL` set to that kernel (tested on NanoPi, kernel 4.14: `OLDEST_KERNEL = "4.14"`).
 
 ## Installation
 
 ### From the ROS 2 apt repository
 
-Rolling packages are published to the ROS 2 testing repository only; see the next
-section.
+```bash
+sudo apt update
+sudo apt install ros-humble-rmw-int2dds-cpp
+source /opt/ros/humble/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+```
 
-Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64**.
+`apt install` pulls in the `int2dds_ffi_vendor` package automatically. The RMW library
+and its ament-index marker install into `/opt/ros/humble/`, so once the environment is
+sourced only `RMW_IMPLEMENTATION` needs to be set.
+
+Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64** (rolling: testing repository only).
+
+### From the ROS 2 RPM repository (RHEL)
+
+With the ROS 2 RPM repository set up as in the
+[ROS 2 RHEL installation guide](https://docs.ros.org/en/humble/Installation/RHEL-Install-RPMs.html):
+
+```bash
+sudo dnf install ros-humble-rmw-int2dds-cpp
+source /opt/ros/humble/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+```
 
 ### Latest version (testing repository or source build)
 
@@ -52,23 +78,57 @@ The newest release is available from the ROS 2 testing repository:
 ```bash
 sudo apt install -y ros2-testing-apt-source
 sudo apt update
-sudo apt install ros-rolling-rmw-int2dds-cpp
-source /opt/ros/rolling/setup.bash
-export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+sudo apt install ros-humble-rmw-int2dds-cpp
 ```
 
 To build from source instead, follow [Quick Start](#quick-start).
+
+### Windows and macOS
+
+There are no binary packages of `rmw_int2dds` for Windows or macOS: build it from
+source on top of a ROS 2 installation made with the ROS 2 installation guide for
+that platform. `int2dds_ffi_vendor` downloads the FFI for the host from the
+[int2DDS releases](https://github.com/IntellectusCorp/int2DDS/releases).
+
+Windows, in an x64 Native Tools Command Prompt for VS 2019. The commands below assume ROS 2 Humble in
+`C:\pixi_ws\ros2-windows`; change the paths to match your installation.
+The ROS 2 Windows binaries are Release builds, so build `rmw_int2dds` as Release too:
+
+```bat
+cd /d C:\pixi_ws
+pixi shell
+call C:\pixi_ws\ros2-windows\local_setup.bat
+md C:\dev\ros2_ws\src
+git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git C:\dev\ros2_ws\src\rmw_int2dds
+cd /d C:\dev\ros2_ws
+colcon build --merge-install --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release
+call C:\dev\ros2_ws\install\local_setup.bat
+set RMW_IMPLEMENTATION=rmw_int2dds_cpp
+ros2 run demo_nodes_cpp talker
+```
+
+macOS (in the shell where the ROS 2 environment is active):
+
+```bash
+mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
+git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git
+cd ~/ros2_ws
+colcon build --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+source install/setup.bash
+export RMW_IMPLEMENTATION=rmw_int2dds_cpp
+ros2 run demo_nodes_cpp talker
+```
 
 ## Quick Start
 
 ```bash
 # 1) Get the sources into your ROS 2 workspace
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b rolling https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b humble https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/rolling/setup.bash
+source /opt/ros/humble/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -80,6 +140,10 @@ ros2 run demo_nodes_cpp talker
 # in another terminal (same RMW_IMPLEMENTATION):
 ros2 run demo_nodes_cpp listener
 ```
+
+On Tier 3 platforms (for Humble: Ubuntu 20.04, Debian 11 and arm32) ROS 2 has no binary packages:
+build ROS 2 from source first ([guide](https://docs.ros.org/en/humble/Installation/Alternatives/Ubuntu-Development-Setup.html))
+and in step 2 source that workspace's `install/setup.bash` instead of `/opt/ros/humble/setup.bash`.
 
 ## Running examples
 

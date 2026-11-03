@@ -36,9 +36,9 @@ network) if confidentiality or authentication is required.
 
 .. note::
 
-   DDS-Security / SROS 2 support is not currently available in int2DDS. This
-   page will be updated with setup steps and the supported plugin list if such
-   support is added.
+   TODO: when SROS 2 / DDS-Security support is added to int2DDS, update this
+   page with setup steps and the supported plugin list, and update
+   ``SECURITY.md`` / ``README`` accordingly.
 
 Reporting vulnerabilities
 -------------------------

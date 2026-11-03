@@ -1,5 +1,5 @@
 # Local rosdep definitions for the int2DDS RMW packages (not in public rosdistro).
-# @ROS_DISTRO@ is substituted with the target distro (humble/jazzy/lyrical/rolling) at build time
+# @ROS_DISTRO@ is substituted with the target distro (jazzy/humble) at build time
 # by packaging/in-container-build.sh.
 int2dds_ffi_vendor:
   ubuntu: [ros-@ROS_DISTRO@-int2dds-ffi-vendor]

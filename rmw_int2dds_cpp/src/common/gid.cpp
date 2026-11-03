@@ -119,20 +119,13 @@ void copy_gid(rmw_gid_t & dest, const rmw_gid_t & src)
 
 extern "C"
 {
+
 rmw_ret_t
 rmw_compare_gids_equal(const rmw_gid_t * gid1, const rmw_gid_t * gid2, bool * result)
 {
   RMW_CHECK_ARGUMENT_FOR_NULL(gid1, RMW_RET_INVALID_ARGUMENT);
   RMW_CHECK_ARGUMENT_FOR_NULL(gid2, RMW_RET_INVALID_ARGUMENT);
   RMW_CHECK_ARGUMENT_FOR_NULL(result, RMW_RET_INVALID_ARGUMENT);
-  if (gid1->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
-    RMW_SET_ERROR_MSG("gid1 not from this implementation");
-    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION;
-  }
-  if (gid2->implementation_identifier != rmw_int2dds_cpp::implementation_identifier) {
-    RMW_SET_ERROR_MSG("gid2 not from this implementation");
-    return RMW_RET_INCORRECT_RMW_IMPLEMENTATION;
-  }
 
   if (gid1->implementation_identifier != rmw_int2dds_cpp::implementation_identifier ||
     gid2->implementation_identifier != rmw_int2dds_cpp::implementation_identifier)
@@ -144,4 +137,5 @@ rmw_compare_gids_equal(const rmw_gid_t * gid1, const rmw_gid_t * gid2, bool * re
   *result = (std::memcmp(gid1->data, gid2->data, RMW_GID_STORAGE_SIZE) == 0);
   return RMW_RET_OK;
 }
+
 }  // extern "C"
