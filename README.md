@@ -31,15 +31,15 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 | Platform | amd64 | arm64 | arm32 |
 |----------|-------|-------|-------|
+| Ubuntu 26.04 (Resolute) | Verified | Verified | Verified |
 | Ubuntu 24.04 (Noble) | Verified | Verified | Verified |
-| Windows 10 | Verified (on Windows 11) |  |  |
-| RHEL 9 | Verified |  |  |
-| Ubuntu 22.04 (Jammy) | Verified |  |  |
+| Windows 11 | Verified |  |  |
+| RHEL 10 | Verified |  |  |
 | macOS | Verified |  |  |
-| Debian 12 (Bookworm) | Verified | Verified | Verified |
+| Debian 13 (Trixie) | Verified | Verified | Verified |
 | OpenEmbedded / Yocto | Verified | Verified | Verified |
 
-- Windows: verified on Windows 11 with Visual Studio 2019. See [Windows and macOS](#windows-and-macos).
+- Windows: verified on Windows 11 with Visual Studio 2022. See [Windows and macOS](#windows-and-macos).
 - macOS: verified on macOS 15.
 - OpenEmbedded / Yocto: verified with a local layer that adds the `rmw_int2dds` recipes. arm32 needs one change in meta-ros: in `meta-ros2/classes/ros_ament_cmake.bbclass`, replace `inherit cmake python3native` with `inherit cmake python3targetconfig`. Without it, the ROS 2 message packages fail with a `LONG_BIT` error before `rmw_int2dds` is reached ([ros/meta-ros#1205](https://github.com/ros/meta-ros/issues/1205), [fix](https://github.com/ros/meta-ros/issues/1205#issuecomment-2298233842)). Boards running an older kernel also need `OLDEST_KERNEL` set to that kernel (tested on NanoPi, kernel 4.14: `OLDEST_KERNEL = "4.14"`).
 
@@ -49,13 +49,13 @@ int2DDS as its middleware via `RMW_IMPLEMENTATION=rmw_int2dds_cpp`.
 
 ```bash
 sudo apt update
-sudo apt install ros-jazzy-rmw-int2dds-cpp
-source /opt/ros/jazzy/setup.bash
+sudo apt install ros-lyrical-rmw-int2dds-cpp
+source /opt/ros/lyrical/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ```
 
 `apt install` pulls in the `int2dds_ffi_vendor` package automatically. The RMW library
-and its ament-index marker install into `/opt/ros/jazzy/`, so once the environment is
+and its ament-index marker install into `/opt/ros/lyrical/`, so once the environment is
 sourced only `RMW_IMPLEMENTATION` needs to be set.
 
 Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64** (rolling: testing repository only).
@@ -63,11 +63,11 @@ Supported: **humble / jazzy / lyrical / rolling** × **amd64 / arm64** (rolling:
 ### From the ROS 2 RPM repository (RHEL)
 
 With the ROS 2 RPM repository set up as in the
-[ROS 2 RHEL installation guide](https://docs.ros.org/en/jazzy/Installation/RHEL-Install-RPMs.html):
+[ROS 2 RHEL installation guide](https://docs.ros.org/en/lyrical/Get-Started/Installation/RHEL-Install-RPMs.html):
 
 ```bash
-sudo dnf install ros-jazzy-rmw-int2dds-cpp
-source /opt/ros/jazzy/setup.bash
+sudo dnf install ros-lyrical-rmw-int2dds-cpp
+source /opt/ros/lyrical/setup.bash
 export RMW_IMPLEMENTATION=rmw_int2dds_cpp
 ```
 
@@ -78,7 +78,7 @@ The newest release is available from the ROS 2 testing repository:
 ```bash
 sudo apt install -y ros2-testing-apt-source
 sudo apt update
-sudo apt install ros-jazzy-rmw-int2dds-cpp
+sudo apt install ros-lyrical-rmw-int2dds-cpp
 ```
 
 To build from source instead, follow [Quick Start](#quick-start).
@@ -90,15 +90,15 @@ source on top of a ROS 2 installation made with the ROS 2 installation guide for
 that platform. `int2dds_ffi_vendor` downloads the FFI for the host from the
 [int2DDS releases](https://github.com/IntellectusCorp/int2DDS/releases).
 
-Windows, in an x64 Native Tools Command Prompt for VS 2019, with ROS 2 Jazzy installed as in the ROS 2 Windows binary guide (`C:\pixi_ws`).
+Windows, in an x64 Native Tools Command Prompt for VS 2022, with ROS 2 Lyrical installed as in the ROS 2 Windows binary guide (`C:\dev\lyrical`).
 The ROS 2 Windows binaries are Release builds, so build `rmw_int2dds` as Release too:
 
 ```bat
-cd /d C:\pixi_ws
+cd /d C:\dev\lyrical
 pixi shell
-call C:\pixi_ws\ros2-windows\local_setup.bat
+call C:\dev\lyrical\local_setup.bat
 md C:\dev\ros2_ws\src
-git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git C:\dev\ros2_ws\src\rmw_int2dds
+git clone -b lyrical https://github.com/IntellectusCorp/rmw_int2dds.git C:\dev\ros2_ws\src\rmw_int2dds
 cd /d C:\dev\ros2_ws
 colcon build --merge-install --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release
 call C:\dev\ros2_ws\install\local_setup.bat
@@ -110,7 +110,7 @@ macOS (in the shell where the ROS 2 environment is active):
 
 ```bash
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b lyrical https://github.com/IntellectusCorp/rmw_int2dds.git
 cd ~/ros2_ws
 colcon build --packages-up-to rmw_int2dds_cpp --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 source install/setup.bash
@@ -123,11 +123,11 @@ ros2 run demo_nodes_cpp talker
 ```bash
 # 1) Get the sources into your ROS 2 workspace
 mkdir -p ~/ros2_ws/src && cd ~/ros2_ws/src
-git clone -b jazzy https://github.com/IntellectusCorp/rmw_int2dds.git
+git clone -b lyrical https://github.com/IntellectusCorp/rmw_int2dds.git
 
 # 2) Build
 cd ~/ros2_ws
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/lyrical/setup.bash
 colcon build --packages-up-to rmw_int2dds_cpp
 source install/setup.bash
 
@@ -140,9 +140,18 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_cpp listener
 ```
 
-On Tier 3 platforms (for Jazzy: Ubuntu 22.04, Debian 12 and arm32) ROS 2 has no binary packages:
-build ROS 2 from source first ([guide](https://docs.ros.org/en/jazzy/Installation/Alternatives/Ubuntu-Development-Setup.html))
-and in step 2 source that workspace's `install/setup.bash` instead of `/opt/ros/jazzy/setup.bash`.
+On Tier 3 platforms (for Lyrical: Ubuntu 24.04, Debian 13 and arm32) ROS 2 has no binary packages:
+build ROS 2 from source first ([guide](https://docs.ros.org/en/lyrical/Get-Started/Installation/Alternatives/Ubuntu-Development-Setup.html))
+and in step 2 source that workspace's `install/setup.bash` instead of `/opt/ros/lyrical/setup.bash`.
+
+On RHEL 10, install the ament lint tools and GoogleTest before step 2:
+
+```bash
+sudo dnf install ros-lyrical-ament-flake8 ros-lyrical-ament-cpplint ros-lyrical-ament-copyright \
+  ros-lyrical-ament-cppcheck ros-lyrical-ament-lint-cmake ros-lyrical-ament-uncrustify \
+  ros-lyrical-ament-xmllint ros-lyrical-ament-pep257 ros-lyrical-ament-mypy \
+  ros-lyrical-ament-pycodestyle gtest-devel gmock-devel
+```
 
 ## Running examples
 

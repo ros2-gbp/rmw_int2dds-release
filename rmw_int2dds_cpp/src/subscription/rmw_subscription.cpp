@@ -103,11 +103,22 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
+#if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
 #pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -924,6 +935,12 @@ rmw_create_subscription(
   subscription->options = *subscription_options;
   subscription->can_loan_messages = false;
   subscription->is_cft_enabled = !sub_data->content_filter_expression.empty();
+#if __has_include("rmw/get_service_endpoint_info.h")
+  // Lyrical+ field (rmw 7.10): int2dds creates DDS content-filtered topics natively.
+  // options.acceptable_buffer_backends (same release) needs no handling here: this
+  // RMW only ever delivers CPU buffers, and CPU is always implicitly acceptable.
+  subscription->is_cft_supported = true;
+#endif
 
   if (subscription->topic_name == nullptr) {
     rmw_subscription_free(subscription);

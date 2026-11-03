@@ -101,11 +101,22 @@ int32_t
 liveliness_to_int2dds(rmw_qos_liveliness_policy_t liveliness)
 {
   switch (liveliness) {
+// The deprecated MANUAL_BY_NODE liveliness policy is gone from Lyrical's rmw.
+// Enumerators are invisible to __has_include, so probe a header instead:
+// rmw/get_service_endpoint_info.h, added in rmw 7.9.1 (ros2/rmw#371). That is
+// NOT the same release the enumerator went in - it is still present at 7.8.2
+// and gone by 7.10.1 - but no released distro ships an rmw in between, so the
+// probe is exact everywhere this package builds:
+//   jazzy 7.3.3, kilted 7.8.2  -> header absent,  enumerator present
+//   lyrical 7.10.1             -> header present, enumerator absent
+// Revisit if this ever has to build against rmw 7.9.x.
+#if !__has_include("rmw/get_service_endpoint_info.h")
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_NODE:
 #pragma GCC diagnostic pop
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_PARTICIPANT;
+#endif
     case RMW_QOS_POLICY_LIVELINESS_MANUAL_BY_TOPIC:
       return INT2DDS_QOS_LIVELINESS_MANUAL_BY_TOPIC;
     case RMW_QOS_POLICY_LIVELINESS_AUTOMATIC:
@@ -617,6 +628,7 @@ rmw_create_publisher(
   {
     std::lock_guard<std::mutex> lock(node_data->entities_mutex);
     node_data->publishers.push_back(pub_data->gid);
+    node_data->live_publishers.push_back(pub_data);
   }
 
   // Listener starts with an empty mask; refreshed when user callbacks register
@@ -678,6 +690,13 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
     for (auto it = pubs.begin(); it != pubs.end(); ++it) {
       if (std::memcmp(it->data, pub_data->gid.data, RMW_GID_STORAGE_SIZE) == 0) {
         pubs.erase(it);
+        break;
+      }
+    }
+    auto & lpubs = node_data->live_publishers;
+    for (auto it = lpubs.begin(); it != lpubs.end(); ++it) {
+      if (*it == pub_data) {
+        lpubs.erase(it);
         break;
       }
     }
